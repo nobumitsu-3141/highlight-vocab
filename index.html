@@ -310,22 +310,26 @@ code.bm{display:block; background:var(--bg); border:1px solid var(--border); bor
 
   <h2>Macのどこからでも追加（アプリを開かずに）</h2>
   <div class="card small">
-    アプリのフォルダにある <b>「セットアップ.command」をダブルクリック</b>すると、
-    Macに「どこでも追加」が組み込まれます（初回のみ）。
+    初回のみ、アプリのフォルダにある <b>「セットアップ.command」をダブルクリック</b>。
+    （アプリを更新したときも再実行してください）
     <div style="margin-top:8px">
-      <b>① 右クリックで追加（どのアプリでもOK）</b><br>
-      Chrome・Safari・プレビューのPDF・メールなどで英単語を選択 →
-      右クリック → <b>サービス →「単語帳に追加」</b>。通知で訳が表示され、
-      このアプリを次に開いたとき自動で単語帳に入ります。
+      <b>① いちばん速い: ダブルコピー（⌘C を素早く2回）</b><br>
+      どのアプリでも（Chrome・プレビューのPDF・メール…）英単語を選択して
+      <b>⌘C ⌘C</b> と2回コピーするだけ。即座に追加され、<b>通知に訳が表示</b>されます。
+      メニュー操作は一切ありません。
     </div>
     <div style="margin-top:8px">
-      <b>② Chrome拡張（選択ボタン＋Option+ホバー辞書）</b><br>
-      Chromeで <code>chrome://extensions</code> を開く → 右上「デベロッパーモード」ON →
+      <b>② ショートカット ⌘⇧E / 右クリック→サービス</b><br>
+      選択して <b>⌘⇧E</b> でも追加できます（効かないアプリは一度再起動を）。
+    </div>
+    <div style="margin-top:8px">
+      <b>③ Chrome拡張（選択ボタン＋Option+ホバー辞書）</b><br>
+      <code>chrome://extensions</code> → 右上「デベロッパーモード」ON →
       「パッケージ化されていない拡張機能を読み込む」→ このアプリのフォルダ内の
       <b>chrome-extension</b> を選択。<br>
-      以後、Webページで単語を選択すると「＋単語帳」ボタンが出ます。
-      <b>Option(⌥)キーを押しながらマウスオーバー</b>でその場に訳がポップアップ、
-      そのままクリックで追加できます。
+      以後、単語を選択すると「＋単語帳」ボタンが浮かび、右クリックメニューの
+      <b>最上部に「…を単語帳に追加」</b>が直接出ます。
+      <b>Option(⌥)+マウスオーバー</b>ならその場に訳がポップアップ、クリックで追加。
     </div>
     <div class="muted" style="margin-top:8px" id="inboxStatus">受信箱: 確認中…</div>
   </div>
@@ -392,7 +396,7 @@ code.bm{display:block; background:var(--bg); border:1px solid var(--border); bor
 /* =====================================================================
    ハイライト英単語帳  v1.0.0
    ===================================================================== */
-const VERSION='1.1.0';
+const VERSION='1.2.0';
 const $=s=>document.querySelector(s), $$=s=>Array.from(document.querySelectorAll(s));
 const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,7);

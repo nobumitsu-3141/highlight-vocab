@@ -256,9 +256,30 @@ class Handler(SimpleHTTPRequestHandler):
         return self._send(404, json.dumps({'ok': False, 'error': 'unknown api'}))
 
 
+def spawn_clipwatch():
+    """ダブルコピー(⌘C×2)監視デーモンを起動・見守り（本番ポート8331のときだけ）"""
+    watch = os.path.join(APP, 'macos', 'clipwatch.js')
+    if PORT != 8331 or os.environ.get('HLVOCAB_CLIP', '1') == '0' or not os.path.isfile(watch):
+        return
+    import subprocess
+    subprocess.run(['pkill', '-f', 'clipwatch.js'], capture_output=True)  # 迷子の旧watcher掃除
+
+    def babysit():
+        while True:
+            try:
+                p = subprocess.Popen(['/usr/bin/osascript', '-l', 'JavaScript', watch],
+                                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                p.wait()
+            except Exception:
+                pass
+            time.sleep(3)  # 落ちたら3秒後に再起動
+    threading.Thread(target=babysit, daemon=True).start()
+
+
 def main():
     srv = ThreadingHTTPServer(('127.0.0.1', PORT), Handler)
     threading.Thread(target=load_dict, daemon=True).start()  # 辞書は裏で先読み
+    spawn_clipwatch()
     srv.serve_forever()
 
 
