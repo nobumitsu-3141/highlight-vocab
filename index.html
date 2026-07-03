@@ -308,7 +308,29 @@ code.bm{display:block; background:var(--bg); border:1px solid var(--border); bor
     <select id="setAutoFetch"><option value="1">オン</option><option value="0">オフ</option></select>
   </div>
 
-  <h2>どこからでも単語を追加（ブックマークレット）</h2>
+  <h2>Macのどこからでも追加（アプリを開かずに）</h2>
+  <div class="card small">
+    アプリのフォルダにある <b>「セットアップ.command」をダブルクリック</b>すると、
+    Macに「どこでも追加」が組み込まれます（初回のみ）。
+    <div style="margin-top:8px">
+      <b>① 右クリックで追加（どのアプリでもOK）</b><br>
+      Chrome・Safari・プレビューのPDF・メールなどで英単語を選択 →
+      右クリック → <b>サービス →「単語帳に追加」</b>。通知で訳が表示され、
+      このアプリを次に開いたとき自動で単語帳に入ります。
+    </div>
+    <div style="margin-top:8px">
+      <b>② Chrome拡張（選択ボタン＋Option+ホバー辞書）</b><br>
+      Chromeで <code>chrome://extensions</code> を開く → 右上「デベロッパーモード」ON →
+      「パッケージ化されていない拡張機能を読み込む」→ このアプリのフォルダ内の
+      <b>chrome-extension</b> を選択。<br>
+      以後、Webページで単語を選択すると「＋単語帳」ボタンが出ます。
+      <b>Option(⌥)キーを押しながらマウスオーバー</b>でその場に訳がポップアップ、
+      そのままクリックで追加できます。
+    </div>
+    <div class="muted" style="margin-top:8px" id="inboxStatus">受信箱: 確認中…</div>
+  </div>
+
+  <h2>iPhoneなど（ブックマークレット）</h2>
   <div class="card small">
     SafariやChromeで読んでいる<b>どんなWebページからでも</b>、単語を選択→このブックマークを開くと、
     このアプリが起動して単語帳に追加できます。
@@ -370,7 +392,7 @@ code.bm{display:block; background:var(--bg); border:1px solid var(--border); bor
 /* =====================================================================
    ハイライト英単語帳  v1.0.0
    ===================================================================== */
-const VERSION='1.0.0';
+const VERSION='1.1.0';
 const $=s=>document.querySelector(s), $$=s=>Array.from(document.querySelectorAll(s));
 const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,7);
@@ -1392,6 +1414,9 @@ function renderSettings(){
   const base=location.origin+location.pathname.replace(/index\.html$/,'');
   $('#bmCode').textContent=`javascript:(function(){var s=String(getSelection()).trim();if(!s){alert('英単語を選択してから押してください');return;}location.href='${base}?add='+encodeURIComponent(s);})()`;
   $('#dataInfo').textContent='カード '+cards.length+'枚 ／ 保存先: この端末のブラウザ内 (localStorage)';
+  fetch('/api/status',{cache:'no-store'}).then(r=>r.ok?r.json():null).then(j=>{
+    $('#inboxStatus').textContent=(j&&j.ok)?'受信箱: 常駐サーバ稼働中 ✔（選択→右クリックで追加できます）':'受信箱: 常駐サーバが見つかりません（セットアップ.commandを実行）';
+  }).catch(()=>{ $('#inboxStatus').textContent='受信箱: このURLでは使えません（Macでは http://localhost:8331 で開いてください）'; });
 }
 $('#setNewPerDay').addEventListener('change',e=>{ settings.newPerDay=Math.max(0,Math.min(100,+e.target.value||0)); saveSettings(); });
 $('#setTheme').addEventListener('change',e=>{ settings.theme=e.target.value; saveSettings(); applyTheme(); });
@@ -1441,6 +1466,52 @@ $('#btnWipe').addEventListener('click',()=>{
 });
 
 /* =====================================================================
+   Mac受信箱の自動取り込み（常駐サーバ /api/inbox・localhost配信時のみ有効）
+   ===================================================================== */
+let pullBusy=false;
+async function pullInbox(){
+  if(pullBusy) return; pullBusy=true;
+  try{
+    const r=await fetch('/api/inbox',{cache:'no-store'});
+    if(r.ok){
+      const j=await r.json();
+      const items=(j.items||[]);
+      if(items.length){
+        ensureDict();
+        let n=0, maxTs=0;
+        for(const it of items){
+          maxTs=Math.max(maxTs,it.ts||0);
+          const w=(it.word||'').trim(); if(!w) continue;
+          const isPhrase=/\s/.test(w);
+          const lk=isPhrase?lookupPhrase(w):lookupWord(w);
+          if(findCardByKey(lk?lk.key:w)) continue;
+          let gloss=lk?lk.gloss:(it.gloss||'');
+          if(!gloss&&!isPhrase){ const rel=relatedLookup(w); if(rel) gloss='(関連語 '+rel.key+') '+rel.gloss; }
+          addCard({
+            word:lk?lk.key:w, key:lk?lk.key:w.toLowerCase(),
+            gloss:gloss.replace(/\s*\/\s*/g,' ／ '),
+            examples:it.context?[{en:it.context,ja:''}]:[],
+            source:it.source||'Macから追加'
+          });
+          n++;
+        }
+        if(maxTs) await fetch('/api/clear?upto='+maxTs).catch(()=>{});
+        if(n){
+          toast(n+'語をMacの選択から取り込みました');
+          markKnownWords(); refreshBadge();
+          if(currentTab==='deck') renderDeck();
+          if(currentTab==='review') renderRevHome();
+        }
+      }
+    }
+  }catch(e){ /* サーバ無し(GitHub Pages等)では静かにスキップ */ }
+  pullBusy=false;
+}
+window.addEventListener('focus',pullInbox);
+document.addEventListener('visibilitychange',()=>{ if(!document.hidden) pullInbox(); });
+setInterval(()=>{ if(!document.hidden) pullInbox(); },20000);
+
+/* =====================================================================
    起動処理
    ===================================================================== */
 applyTheme();
@@ -1458,7 +1529,7 @@ refreshBadge();
 // 辞書ロード後に既知マークを更新
 window.addEventListener('load',()=>{
   const idle=window.requestIdleCallback||function(f){setTimeout(f,400);};
-  idle(()=>{ ensureDict(); markKnownWords(); });
+  idle(()=>{ ensureDict(); markKnownWords(); pullInbox(); });
 });
 // Service Worker
 if('serviceWorker' in navigator && location.protocol.startsWith('http')){

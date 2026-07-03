@@ -1,7 +1,7 @@
 /* ハイライト英単語帳 — service worker
    大きな固定ファイル(dict.js / pdf.js / icons)はキャッシュ優先、
    index.html などはネットワーク優先(オフライン時キャッシュ)。 */
-const CACHE = 'hlvocab-v1';
+const CACHE = 'hlvocab-v2';
 const ASSETS = [
   './',
   'index.html',
@@ -36,6 +36,7 @@ self.addEventListener('fetch', (e) => {
   if (e.request.method !== 'GET') return;
   const url = new URL(e.request.url);
   if (url.origin !== location.origin) return; // 外部API(辞書API等)はSWで触らない
+  if (url.pathname.includes('/api/')) return; // 受信箱APIはキャッシュしない
 
   if (CACHE_FIRST.test(url.pathname)) {
     e.respondWith(
