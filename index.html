@@ -1,0 +1,1473 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>ハイライト英単語帳</title>
+<meta name="description" content="英文を読みながら単語をハイライト→単語帳→間隔反復で復習する英語学習PWA">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="icon" href="icons/icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#0f172a">
+<style>
+:root{
+  --bg:#f4f6f9; --card:#ffffff; --ink:#1e293b; --muted:#64748b; --border:#e2e8f0;
+  --accent:#2563eb; --accent-ink:#ffffff; --hl:rgba(250,204,21,.50); --hl-border:rgba(202,138,4,.55);
+  --good:#16a34a; --bad:#dc2626; --warn:#d97706; --chip:#eef2f7; --shadow:0 6px 24px rgba(15,23,42,.14);
+}
+[data-theme="dark"]{
+  --bg:#0c111b; --card:#16202e; --ink:#e2e8f0; --muted:#94a3b8; --border:#273449;
+  --accent:#3b82f6; --accent-ink:#ffffff; --hl:rgba(250,204,21,.30); --hl-border:rgba(250,204,21,.45);
+  --chip:#1e2a3d; --shadow:0 6px 24px rgba(0,0,0,.5);
+}
+*{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+html,body{margin:0; padding:0;}
+body{
+  background:var(--bg); color:var(--ink);
+  font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Hiragino Kaku Gothic ProN","Segoe UI",Roboto,sans-serif;
+  font-size:16px; line-height:1.6;
+  padding-bottom:calc(64px + env(safe-area-inset-bottom));
+}
+button{font-family:inherit;}
+.top{
+  position:sticky; top:0; z-index:30; background:var(--bg);
+  padding:calc(8px + env(safe-area-inset-top)) 14px 8px; display:flex; align-items:center; gap:8px;
+  border-bottom:1px solid var(--border);
+}
+.top h1{font-size:17px; margin:0; flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+.top .mini{font-size:12px; color:var(--muted);}
+main{max-width:860px; margin:0 auto; padding:10px 12px;}
+section.tab{display:none;}
+section.tab.active{display:block;}
+.tabbar{
+  position:fixed; left:0; right:0; bottom:0; z-index:40; display:flex;
+  background:var(--card); border-top:1px solid var(--border);
+  padding-bottom:env(safe-area-inset-bottom);
+}
+.tabbar button{
+  flex:1; background:none; border:none; padding:7px 0 6px; cursor:pointer;
+  color:var(--muted); font-size:10.5px; line-height:1.25; position:relative;
+}
+.tabbar button .ic{display:block; font-size:21px; line-height:1.2;}
+.tabbar button.active{color:var(--accent); font-weight:600;}
+.tabbar .badge{
+  position:absolute; top:2px; right:calc(50% - 24px); background:var(--bad); color:#fff;
+  font-size:10px; min-width:17px; height:17px; border-radius:9px; line-height:17px; padding:0 4px;
+  font-weight:700; display:none;
+}
+.card{background:var(--card); border:1px solid var(--border); border-radius:14px; padding:14px; margin:10px 0; box-shadow:0 1px 3px rgba(15,23,42,.05);}
+.btn{
+  display:inline-flex; align-items:center; justify-content:center; gap:6px;
+  background:var(--accent); color:var(--accent-ink); border:none; border-radius:10px;
+  padding:10px 16px; font-size:14.5px; font-weight:600; cursor:pointer;
+}
+.btn:active{opacity:.8;}
+.btn.sub{background:var(--chip); color:var(--ink); border:1px solid var(--border); font-weight:500;}
+.btn.danger{background:var(--bad);}
+.btn.small{padding:6px 11px; font-size:13px; border-radius:8px;}
+.btn:disabled{opacity:.45; cursor:default;}
+.row{display:flex; gap:8px; flex-wrap:wrap; align-items:center;}
+.grow{flex:1;}
+input[type=text],input[type=search],input[type=number],textarea,select{
+  width:100%; background:var(--bg); color:var(--ink); border:1px solid var(--border);
+  border-radius:10px; padding:9px 11px; font-size:15px; font-family:inherit;
+}
+textarea{resize:vertical; min-height:64px; line-height:1.55;}
+label.fl{display:block; font-size:12.5px; color:var(--muted); margin:10px 0 4px; font-weight:600;}
+.muted{color:var(--muted);}
+.small{font-size:12.5px;}
+h2{font-size:16px; margin:14px 2px 6px;}
+h3{font-size:14.5px; margin:12px 0 6px;}
+hr{border:none; border-top:1px solid var(--border); margin:12px 0;}
+
+/* ---------- reader ---------- */
+#readerEmpty .bigbtns{display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:12px;}
+#readerEmpty .bigbtns button{
+  background:var(--card); border:1px solid var(--border); border-radius:14px; padding:16px 8px;
+  font-size:14px; color:var(--ink); cursor:pointer; font-weight:600;
+}
+#readerEmpty .bigbtns .ic{display:block; font-size:26px; margin-bottom:6px;}
+#readerBar{display:flex; gap:6px; align-items:center; margin:4px 0 8px; flex-wrap:wrap;}
+#docTitle{font-weight:700; font-size:15px; flex:1; min-width:120px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+#readerText{
+  background:var(--card); border:1px solid var(--border); border-radius:14px;
+  padding:18px 16px; font-size:17px; line-height:1.9; user-select:text; -webkit-user-select:text;
+}
+#readerText p{margin:0 0 1em;}
+#readerText .w{cursor:pointer; border-radius:4px; padding:0 1px;}
+@media (hover:hover){ #readerText .w:hover{background:var(--chip); box-shadow:0 0 0 1px var(--border);} }
+#readerText .w.known{background:var(--hl); box-shadow:0 0 0 1px var(--hl-border);}
+#pageNav{display:flex; align-items:center; justify-content:center; gap:10px; margin:10px 0;}
+#pageNav button{background:var(--chip); border:1px solid var(--border); color:var(--ink); border-radius:8px; padding:6px 14px; font-size:14px; cursor:pointer;}
+#pageNav button:disabled{opacity:.35;}
+#tooltip{
+  position:fixed; z-index:60; max-width:290px; background:var(--card); color:var(--ink);
+  border:1px solid var(--border); border-radius:10px; padding:8px 10px; font-size:13px; line-height:1.5;
+  box-shadow:var(--shadow); display:none; pointer-events:none;
+}
+#tooltip b{font-size:14px;}
+#selAdd{
+  position:fixed; z-index:55; display:none; background:var(--ink); color:var(--bg);
+  border:none; border-radius:20px; padding:8px 14px; font-size:13.5px; font-weight:600; cursor:pointer;
+  box-shadow:var(--shadow); max-width:80vw; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+}
+
+/* ---------- deck ---------- */
+.chips{display:flex; gap:6px; overflow-x:auto; padding:2px 0; margin:8px 0;}
+.chips button{
+  background:var(--chip); border:1px solid var(--border); color:var(--muted); border-radius:16px;
+  padding:5px 12px; font-size:13px; white-space:nowrap; cursor:pointer;
+}
+.chips button.active{background:var(--accent); border-color:var(--accent); color:#fff; font-weight:600;}
+.wordrow{
+  display:flex; align-items:center; gap:10px; background:var(--card); border:1px solid var(--border);
+  border-radius:12px; padding:10px 12px; margin:7px 0; cursor:pointer;
+}
+.wordrow .w1{font-weight:700; font-size:16px;}
+.wordrow .g1{color:var(--muted); font-size:13px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+.wordrow .meta{margin-left:auto; text-align:right; font-size:11px; color:var(--muted); white-space:nowrap;}
+.tag{display:inline-block; font-size:10.5px; border-radius:6px; padding:1px 6px; font-weight:700;}
+.tag.new{background:#dbeafe; color:#1d4ed8;}
+.tag.learn{background:#fef3c7; color:#b45309;}
+.tag.master{background:#dcfce7; color:#15803d;}
+[data-theme="dark"] .tag.new{background:#1e3a5f; color:#93c5fd;}
+[data-theme="dark"] .tag.learn{background:#453107; color:#fcd34d;}
+[data-theme="dark"] .tag.master{background:#14351f; color:#86efac;}
+
+/* ---------- review ---------- */
+.rev-stage{min-height:300px; display:flex; flex-direction:column;}
+.rev-front{font-size:30px; font-weight:800; text-align:center; margin:26px 0 8px; overflow-wrap:anywhere;}
+.rev-front.jp{font-size:20px; font-weight:700; line-height:1.7;}
+.rev-dir{text-align:center;}
+.rev-dir span{font-size:11.5px; background:var(--chip); border:1px solid var(--border); color:var(--muted); border-radius:10px; padding:2px 10px;}
+.rev-answer{border-top:1px dashed var(--border); margin-top:16px; padding-top:14px;}
+.grade4{display:grid; grid-template-columns:repeat(4,1fr); gap:8px; margin-top:14px;}
+.grade4 button{border:none; border-radius:12px; padding:11px 2px; font-size:13.5px; font-weight:700; color:#fff; cursor:pointer;}
+.grade4 .g0{background:#dc2626;} .grade4 .g3{background:#d97706;} .grade4 .g4{background:#2563eb;} .grade4 .g5{background:#16a34a;}
+.grade4 small{display:block; font-weight:400; font-size:10px; opacity:.85;}
+.choice{display:block; width:100%; text-align:left; background:var(--bg); border:1.5px solid var(--border); color:var(--ink);
+  border-radius:12px; padding:11px 13px; font-size:14.5px; margin:7px 0; cursor:pointer;}
+.choice.correct{border-color:var(--good); background:rgba(22,163,74,.12);}
+.choice.wrong{border-color:var(--bad); background:rgba(220,38,38,.12);}
+.progressbar{height:6px; background:var(--chip); border-radius:3px; overflow:hidden;}
+.progressbar>div{height:100%; background:var(--accent); width:0%; transition:width .25s;}
+.statgrid{display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin:10px 0;}
+.statgrid .card{margin:0; text-align:center; padding:12px 6px;}
+.statgrid .num{font-size:24px; font-weight:800;}
+.statgrid .lbl{font-size:11.5px; color:var(--muted);}
+.bars{display:flex; align-items:flex-end; gap:3px; height:70px; margin:8px 0 2px;}
+.bars .b{flex:1; display:flex; flex-direction:column; justify-content:flex-end; gap:1px;}
+.bars .b i{display:block; border-radius:2px 2px 0 0;}
+.bars .b .add{background:#f59e0b;}
+.bars .b .rev{background:var(--accent);}
+.barlbl{display:flex; gap:3px;} .barlbl span{flex:1; text-align:center; font-size:8.5px; color:var(--muted);}
+
+/* ---------- sheet / overlay ---------- */
+#overlay{position:fixed; inset:0; background:rgba(0,0,0,.45); z-index:70; display:none;}
+#sheet{
+  position:fixed; left:0; right:0; bottom:0; z-index:71; background:var(--card);
+  border-radius:18px 18px 0 0; max-height:88vh; overflow-y:auto; -webkit-overflow-scrolling:touch;
+  padding:6px 16px calc(20px + env(safe-area-inset-bottom)); display:none; box-shadow:var(--shadow);
+}
+@media(min-width:700px){ #sheet{left:50%; right:auto; transform:translateX(-50%); width:640px; border-radius:18px; bottom:5vh;} }
+#sheet .grab{width:40px; height:4px; border-radius:2px; background:var(--border); margin:6px auto 10px;}
+#sheet h2{margin-top:2px;}
+.sheetword{font-size:26px; font-weight:800; overflow-wrap:anywhere;}
+.phon{color:var(--muted); font-size:14px; margin-left:6px;}
+.spk{background:var(--chip); border:1px solid var(--border); border-radius:50%; width:36px; height:36px; font-size:17px; cursor:pointer;}
+.exlist .ex{background:var(--bg); border:1px solid var(--border); border-radius:10px; padding:8px 10px; margin:6px 0; font-size:14px;}
+.exlist .ex .ja{color:var(--muted); font-size:12.5px; margin-top:2px;}
+#toast{
+  position:fixed; bottom:calc(80px + env(safe-area-inset-bottom)); left:50%; transform:translateX(-50%);
+  background:var(--ink); color:var(--bg); border-radius:20px; padding:9px 18px; font-size:13.5px; font-weight:600;
+  z-index:90; display:none; max-width:86vw; text-align:center; box-shadow:var(--shadow);
+}
+.dictgloss{white-space:pre-wrap; overflow-wrap:anywhere;}
+code.bm{display:block; background:var(--bg); border:1px solid var(--border); border-radius:10px; padding:10px; font-size:11px; overflow-wrap:anywhere; user-select:all; -webkit-user-select:all;}
+.kbd{font-size:11px; color:var(--muted);}
+</style>
+</head>
+<body>
+
+<header class="top">
+  <h1 id="topTitle">ハイライト英単語帳</h1>
+  <span class="mini" id="topInfo"></span>
+</header>
+
+<main>
+<!-- ================= リーダー ================= -->
+<section class="tab active" id="tab-reader">
+  <div id="readerEmpty">
+    <div class="card">
+      <b>英文を読みながら、知らない単語をその場で単語帳へ。</b>
+      <div class="small muted" style="margin-top:6px">
+        単語に<b>マウスを乗せる</b>と意味がすぐ出ます（スマホはタップ）。<br>
+        クリック/タップで「訳・使い方・例文」つきのカードとして単語帳に追加。<br>
+        追加済みの単語は本文中で<span style="background:var(--hl); border-radius:4px; padding:0 4px">ハイライト</span>されます。
+        複数語のフレーズは<b>ドラッグで選択</b>して追加できます。
+      </div>
+    </div>
+    <div class="bigbtns">
+      <button id="btnPaste"><span class="ic">📋</span>テキストを貼り付け</button>
+      <button id="btnPdf"><span class="ic">📄</span>PDFを開く</button>
+      <button id="btnTxt"><span class="ic">📁</span>テキストファイル</button>
+      <button id="btnSample"><span class="ic">✨</span>サンプルを読む</button>
+    </div>
+  </div>
+
+  <div id="readerDoc" style="display:none">
+    <div id="readerBar">
+      <span id="docTitle"></span>
+      <button class="btn sub small" id="btnNewDoc">📂 別の文章</button>
+    </div>
+    <div id="readerText"></div>
+    <div id="pageNav" style="display:none">
+      <button id="pgPrev">◀ 前</button>
+      <span id="pgInfo" class="small muted"></span>
+      <button id="pgNext">次 ▶</button>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 単語帳 ================= -->
+<section class="tab" id="tab-deck">
+  <div class="row" style="margin-top:6px">
+    <input type="search" id="deckSearch" placeholder="単語・訳を検索" class="grow" style="max-width:none">
+    <button class="btn small" id="btnAddManual">＋ 追加</button>
+  </div>
+  <div class="chips" id="deckChips">
+    <button data-f="all" class="active">すべて</button>
+    <button data-f="new">新規</button>
+    <button data-f="learn">学習中</button>
+    <button data-f="master">習得済み</button>
+    <select id="deckSort" style="width:auto; margin-left:auto; padding:4px 8px; font-size:12.5px; border-radius:16px">
+      <option value="new">追加順</option>
+      <option value="abc">ABC順</option>
+      <option value="due">期限順</option>
+    </select>
+  </div>
+  <div id="deckList"></div>
+  <div id="deckEmpty" class="card muted" style="display:none">
+    まだカードがありません。リーダーで英文を開いて、単語をタップして追加しましょう。
+  </div>
+</section>
+
+<!-- ================= 復習 ================= -->
+<section class="tab" id="tab-review">
+  <div id="revHome">
+    <div class="statgrid">
+      <div class="card"><div class="num" id="stDue">0</div><div class="lbl">今日の復習</div></div>
+      <div class="card"><div class="num" id="stNew">0</div><div class="lbl">新規カード</div></div>
+      <div class="card"><div class="num" id="stStreak">0</div><div class="lbl">連続日数</div></div>
+    </div>
+    <button class="btn" id="btnStartReview" style="width:100%; padding:14px; font-size:16px">▶ 復習をはじめる</button>
+    <div class="small muted" style="margin:6px 2px">
+      期限が来たカード＋新規カード（1日 <span id="lblNewPerDay"></span> 枚まで）を出題。
+      「英→和」で覚えたカードは翌日から「和→英」も出題されます。
+    </div>
+    <h2>クイックテスト（復習記録に影響しません）</h2>
+    <div class="row">
+      <button class="btn sub grow" id="btnQuizEJ">4択 英→和</button>
+      <button class="btn sub grow" id="btnQuizJE">4択 和→英</button>
+      <button class="btn sub grow" id="btnQuizMix">4択 ミックス</button>
+    </div>
+    <div class="row" style="margin-top:8px">
+      <button class="btn sub grow" id="btnQuizType">⌨️ 和→英 タイピング（スペル練習）</button>
+    </div>
+    <div id="revStats"></div>
+  </div>
+
+  <div id="revSession" style="display:none">
+    <div class="row" style="margin:6px 0">
+      <div class="progressbar grow"><div id="revProg"></div></div>
+      <span class="small muted" id="revCount"></span>
+      <button class="btn sub small" id="btnRevQuit">終了</button>
+    </div>
+    <div class="card rev-stage" id="revStage"></div>
+    <div class="kbd" style="text-align:center; margin-top:6px" id="revKbd"></div>
+  </div>
+</section>
+
+<!-- ================= 設定 ================= -->
+<section class="tab" id="tab-settings">
+  <h2>学習設定</h2>
+  <div class="card">
+    <label class="fl">1日の新規カード上限</label>
+    <input type="number" id="setNewPerDay" min="0" max="100" step="1">
+    <label class="fl">テーマ</label>
+    <select id="setTheme">
+      <option value="auto">自動（端末に合わせる）</option>
+      <option value="light">ライト</option>
+      <option value="dark">ダーク</option>
+    </select>
+    <label class="fl">復習で答えを表示したとき自動で発音する</label>
+    <select id="setAutoSpeak"><option value="0">オフ</option><option value="1">オン</option></select>
+    <label class="fl">カード追加時に例文・発音記号を自動取得（オンライン時のみ）</label>
+    <select id="setAutoFetch"><option value="1">オン</option><option value="0">オフ</option></select>
+  </div>
+
+  <h2>どこからでも単語を追加（ブックマークレット）</h2>
+  <div class="card small">
+    SafariやChromeで読んでいる<b>どんなWebページからでも</b>、単語を選択→このブックマークを開くと、
+    このアプリが起動して単語帳に追加できます。
+    <code class="bm" id="bmCode"></code>
+    <div class="row" style="margin-top:8px">
+      <button class="btn small" id="btnCopyBm">コードをコピー</button>
+    </div>
+    <div class="muted" style="margin-top:8px">
+      <b>iPhone:</b> 適当なページをブックマーク→ブックマーク編集でURLを上のコードに置き換え、名前を「単語帳に追加」などに。<br>
+      <b>Mac:</b> ブックマークバーの適当なブックマークを編集して、URLを上のコードに置き換え。<br>
+      以後、英単語を選択してそのブックマークを押すだけで追加画面が開きます。
+    </div>
+  </div>
+
+  <h2>データ</h2>
+  <div class="card">
+    <div class="row">
+      <button class="btn sub grow" id="btnExport">📤 バックアップ書き出し</button>
+      <button class="btn sub grow" id="btnImport">📥 読み込み（統合）</button>
+    </div>
+    <div class="row" style="margin-top:8px">
+      <button class="btn sub grow" id="btnAnki">Anki用TSV書き出し</button>
+      <button class="btn danger grow" id="btnWipe">全カード削除</button>
+    </div>
+    <div class="small muted" style="margin-top:8px" id="dataInfo"></div>
+  </div>
+
+  <h2>このアプリについて</h2>
+  <div class="card small muted">
+    ハイライト英単語帳 <span id="verLabel"></span><br>
+    辞書: <b>EJDict-hand</b>（パブリックドメイン / CC0・約4.6万語）をオフライン内蔵。<br>
+    例文・発音記号の自動取得: Free Dictionary API・Datamuse（オンライン時のみ、無料）。<br>
+    PDF表示: pdf.js（Mozilla, Apache-2.0）。データはすべてこの端末の中に保存されます。
+  </div>
+</section>
+</main>
+
+<!-- タブバー -->
+<nav class="tabbar">
+  <button data-tab="reader" class="active"><span class="ic">📖</span>リーダー</button>
+  <button data-tab="deck"><span class="ic">🗂️</span>単語帳</button>
+  <button data-tab="review"><span class="ic">🔁</span>復習<span class="badge" id="dueBadge"></span></button>
+  <button data-tab="settings"><span class="ic">⚙️</span>設定</button>
+</nav>
+
+<div id="tooltip"></div>
+<button id="selAdd"></button>
+<div id="overlay"></div>
+<div id="sheet"><div class="grab"></div><div id="sheetBody"></div></div>
+<div id="toast"></div>
+
+<input type="file" id="fileTxt" accept=".txt,.md,.text" style="display:none">
+<input type="file" id="filePdf" accept=".pdf,application/pdf" style="display:none">
+<input type="file" id="fileImport" accept=".json,application/json" style="display:none">
+
+<script src="dict.js" defer></script>
+<script>
+'use strict';
+/* =====================================================================
+   ハイライト英単語帳  v1.0.0
+   ===================================================================== */
+const VERSION='1.0.0';
+const $=s=>document.querySelector(s), $$=s=>Array.from(document.querySelectorAll(s));
+const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,7);
+function todayStr(d){ d=d||new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+function addDays(iso,n){ const p=iso.split('-'); const d=new Date(+p[0],+p[1]-1,+p[2]); d.setDate(d.getDate()+n); return todayStr(d); }
+function daysBetween(a,b){ const pa=a.split('-'),pb=b.split('-'); return Math.round((new Date(+pb[0],+pb[1]-1,+pb[2])-new Date(+pa[0],+pa[1]-1,+pa[2]))/864e5); }
+let toastTimer=null;
+function toast(msg){ const t=$('#toast'); t.textContent=msg; t.style.display='block'; clearTimeout(toastTimer); toastTimer=setTimeout(()=>t.style.display='none',2000); }
+function shuffle(a){ for(let i=a.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]]; } return a; }
+
+/* ---------------- ストレージ ---------------- */
+const LS={cards:'hlv.cards.v1', settings:'hlv.settings.v1', stats:'hlv.stats.v1', doc:'hlv.doc.v1'};
+function lsGet(k,fb){ try{ const v=localStorage.getItem(k); return v?JSON.parse(v):fb; }catch(e){ return fb; } }
+function lsSet(k,v){ try{ localStorage.setItem(k,JSON.stringify(v)); return true; }catch(e){ return false; } }
+
+let cards=lsGet(LS.cards,[]);
+let settings=Object.assign({newPerDay:10, theme:'auto', autoSpeak:false, autoFetch:true}, lsGet(LS.settings,{}));
+let stats=lsGet(LS.stats,{byDay:{}});
+function saveCards(){ lsSet(LS.cards,cards); refreshBadge(); }
+function saveSettings(){ lsSet(LS.settings,settings); }
+function saveStats(){ lsSet(LS.stats,stats); }
+function dayStat(d){ d=d||todayStr(); if(!stats.byDay[d]) stats.byDay[d]={added:0,reviewed:0,correct:0,intro:0}; return stats.byDay[d]; }
+
+/* ---------------- テーマ ---------------- */
+const mqDark=window.matchMedia('(prefers-color-scheme: dark)');
+function applyTheme(){
+  const t=settings.theme==='auto'?(mqDark.matches?'dark':'light'):settings.theme;
+  document.documentElement.dataset.theme=t;
+  const m=document.querySelector('meta[name=theme-color]'); if(m) m.content=(t==='dark'?'#0c111b':'#f4f6f9');
+}
+mqDark.addEventListener('change',()=>{ if(settings.theme==='auto') applyTheme(); });
+
+/* ---------------- 辞書 ---------------- */
+let DICT=null;
+function ensureDict(){
+  if(DICT) return DICT;
+  if(!window.EJDICT_RAW) return null;
+  DICT=new Map();
+  for(const ln of window.EJDICT_RAW.split('\n')){
+    const t=ln.indexOf('\t'); if(t>0) DICT.set(ln.slice(0,t), ln.slice(t+1));
+  }
+  return DICT;
+}
+const IRREG={went:'go',gone:'go',did:'do',done:'do',was:'be',were:'be',been:'be',is:'be',are:'be',am:'be',
+has:'have',had:'have',having:'have',said:'say',made:'make',took:'take',taken:'take',came:'come',got:'get',
+gotten:'get',gave:'give',given:'give',found:'find',thought:'think',told:'tell',became:'become',shown:'show',
+left:'leave',felt:'feel',brought:'bring',began:'begin',begun:'begin',kept:'keep',held:'hold',wrote:'write',
+written:'write',stood:'stand',heard:'hear',meant:'mean',met:'meet',ran:'run',paid:'pay',sat:'sit',spoke:'speak',
+spoken:'speak',led:'lead',grew:'grow',grown:'grow',lost:'lose',fell:'fall',fallen:'fall',sent:'send',built:'build',
+understood:'understand',drew:'draw',drawn:'draw',broke:'break',broken:'break',spent:'spend',rose:'rise',risen:'rise',
+drove:'drive',driven:'drive',bought:'buy',wore:'wear',worn:'wear',chose:'choose',chosen:'choose',ate:'eat',eaten:'eat',
+knew:'know',known:'know',saw:'see',seen:'see',sought:'seek',taught:'teach',caught:'catch',fought:'fight',flew:'fly',
+flown:'fly',threw:'throw',thrown:'throw',laid:'lay',slept:'sleep',woke:'wake',woken:'wake',forgot:'forget',
+forgotten:'forget',children:'child',men:'man',women:'woman',feet:'foot',teeth:'tooth',mice:'mouse',people:'person',
+better:'good',best:'good',worse:'bad',worst:'bad',lives:'life',knives:'knife',leaves:'leaf',selves:'self',
+wives:'wife',halves:'half',shelves:'shelf',lying:'lie',dying:'die',tying:'tie'};
+function lemmaCandidates(w){
+  const out=[w];
+  if(IRREG[w]) out.push(IRREG[w]);
+  if(/'s$/.test(w)) out.push(w.slice(0,-2));
+  if(/s'$/.test(w)) out.push(w.slice(0,-1));
+  if(/ies$/.test(w)) out.push(w.slice(0,-3)+'y');
+  if(/ied$/.test(w)) out.push(w.slice(0,-3)+'y');
+  if(/ier$/.test(w)) out.push(w.slice(0,-3)+'y');
+  if(/iest$/.test(w)) out.push(w.slice(0,-4)+'y');
+  if(/ily$/.test(w)) out.push(w.slice(0,-3)+'y');
+  if(/es$/.test(w)){ out.push(w.slice(0,-2)); out.push(w.slice(0,-1)); }
+  else if(/s$/.test(w)&&!/ss$/.test(w)) out.push(w.slice(0,-1));
+  if(/ing$/.test(w)){
+    const b=w.slice(0,-3); out.push(b); out.push(b+'e');
+    if(b.length>2&&b[b.length-1]===b[b.length-2]) out.push(b.slice(0,-1));
+  }
+  if(/ed$/.test(w)){
+    const b=w.slice(0,-2); out.push(b); out.push(w.slice(0,-1));
+    if(b.length>2&&b[b.length-1]===b[b.length-2]) out.push(b.slice(0,-1));
+  }
+  if(/est$/.test(w)){ out.push(w.slice(0,-3)); out.push(w.slice(0,-2)); }
+  else if(/er$/.test(w)){ out.push(w.slice(0,-2)); out.push(w.slice(0,-1)); }
+  if(/ly$/.test(w)) out.push(w.slice(0,-2));
+  return [...new Set(out.filter(x=>x&&x.length>0))];
+}
+// 単語→ {key(見出し語), gloss} / 見つからなければ null
+const lookupCache=new Map();
+function lookupWord(raw){
+  const w=raw.toLowerCase().replace(/’/g,"'");
+  if(lookupCache.has(w)) return lookupCache.get(w);
+  const d=ensureDict(); if(!d) return null;   // 辞書ロード前はキャッシュしない
+  let res=null;
+  for(const c of lemmaCandidates(w)){
+    if(d.has(c)){ res={key:c, gloss:d.get(c)}; break; }
+  }
+  if(lookupCache.size<8000) lookupCache.set(w,res);
+  return res;
+}
+function lookupPhrase(p){
+  const d=ensureDict(); if(!d) return null;
+  const k=p.toLowerCase().replace(/’/g,"'").replace(/\s+/g,' ').trim();
+  return d.has(k)?{key:k,gloss:d.get(k)}:null;
+}
+// 辞書に無い派生語 → 関連語で引く（anesthesiologist → anesthesiology 等）
+function relatedLookup(raw){
+  const d=ensureDict(); if(!d) return null;
+  const w=raw.toLowerCase();
+  const tries=[];
+  if(/ists?$/.test(w)){ const b=w.replace(/ists?$/,''); tries.push(b+'y',b+'ism',b,b+'e'); }
+  if(/isms?$/.test(w)){ const b=w.replace(/isms?$/,''); tries.push(b,b+'y',b+'e'); }
+  if(/tions?$/.test(w)){ const b=w.replace(/tions?$/,''); tries.push(b+'te',b+'t',b); }
+  if(/sions?$/.test(w)){ const b=w.replace(/sions?$/,''); tries.push(b+'de',b+'se',b+'d',b+'t'); }
+  if(/ally$/.test(w)) tries.push(w.slice(0,-2),w.slice(0,-4));
+  if(/ness$/.test(w)) tries.push(w.slice(0,-4));
+  if(/ments?$/.test(w)) tries.push(w.replace(/ments?$/,''));
+  if(/ities$/.test(w)) tries.push(w.slice(0,-5)+'y');
+  if(/ity$/.test(w)) tries.push(w.slice(0,-3)+'e',w.slice(0,-3),w.slice(0,-3)+'ous');
+  if(/ive$/.test(w)) tries.push(w.slice(0,-3)+'e',w.slice(0,-3));
+  if(/ful$/.test(w)||/less$/.test(w)) tries.push(w.replace(/(ful|less)$/,''));
+  if(/able$/.test(w)||/ible$/.test(w)) tries.push(w.slice(0,-4),w.slice(0,-4)+'e');
+  if(/ences?$/.test(w)) tries.push(w.replace(/ences?$/,'ent'));
+  if(/ances?$/.test(w)) tries.push(w.replace(/ances?$/,'ant'));
+  if(/ency$/.test(w)) tries.push(w.slice(0,-4)+'ent');
+  if(/ancy$/.test(w)) tries.push(w.slice(0,-4)+'ant');
+  for(const t of tries){ if(t&&t.length>2&&d.has(t)) return {key:t, gloss:d.get(t)}; }
+  return null;
+}
+let BASIC=null;
+function isBasicWord(k){
+  if(!BASIC){ BASIC=new Set(window.BASIC_WORDS||[]); if(!BASIC.size) return false; }
+  return BASIC.has(k);
+}
+// ホバーで意味を出さない機能語（クリックでの追加は可能）
+const FUNC_WORDS=new Set(['the','a','an','and','or','but','of','to','in','on','at','for','with','by','from','as','is','are','was','were','be','been','being','it','its','he','she','they','them','his','her','their','this','that','these','those','which','who','whom','whose','what','has','have','had','not','no','so','if','can','could','will','would','may','might','shall','should','do','does','did','i','my','me','you','your','we','our','us','am','than','then','there','here']);
+function glossShort(g,n){ n=n||46; g=(g||'').replace(/\s*\/\s*/g,'、'); return g.length>n?g.slice(0,n)+'…':g; }
+
+/* ---------------- 発音 (TTS) ---------------- */
+let voices=[];
+function loadVoices(){ voices=speechSynthesis.getVoices()||[]; }
+if('speechSynthesis' in window){ loadVoices(); speechSynthesis.onvoiceschanged=loadVoices; }
+function speak(text){
+  if(!('speechSynthesis' in window)) return;
+  try{
+    speechSynthesis.cancel();
+    const u=new SpeechSynthesisUtterance(text);
+    u.lang='en-US'; u.rate=0.95;
+    const v=voices.find(v=>/^en[-_](US|GB)/.test(v.lang)&&/Samantha|Daniel|Karen|Google US/.test(v.name))
+          ||voices.find(v=>/^en[-_](US|GB)/.test(v.lang))||voices.find(v=>v.lang.startsWith('en'));
+    if(v) u.voice=v;
+    speechSynthesis.speak(u);
+  }catch(e){}
+}
+
+/* ---------------- カード ---------------- */
+function newSrs(){ return {ef:2.5,reps:0,iv:0,due:null,lapses:0}; }
+function findCard(id){ return cards.find(c=>c.id===id); }
+function findCardByKey(key){ key=key.toLowerCase(); return cards.find(c=>c.key===key||c.word.toLowerCase()===key); }
+function knownKeySet(){
+  const s=new Set();
+  for(const c of cards){ s.add(c.word.toLowerCase()); if(c.key) s.add(c.key); }
+  return s;
+}
+function addCard(o){
+  const card={
+    id:uid(), word:o.word.trim(), key:(o.key||o.word).toLowerCase().trim(),
+    gloss:o.gloss||'', usage:o.usage||'', phonetic:o.phonetic||'',
+    examples:o.examples||[], source:o.source||'', createdAt:new Date().toISOString(),
+    f:newSrs(), r:newSrs()
+  };
+  card.f.due=todayStr();          // 英→和は今日から新規として出題可能
+  cards.unshift(card);
+  dayStat().added++; saveStats(); saveCards();
+  if(settings.autoFetch) enrichCard(card);
+  return card;
+}
+function seen(s){ return s.reps>0||s.lapses>0; }
+function cardStatus(c){
+  if(!seen(c.f)&&!seen(c.r)) return 'new';
+  if(c.f.iv>=21&&(!seen(c.r)||c.r.iv>=21)) return 'master';
+  return 'learn';
+}
+const STATUS_LABEL={new:['新規','new'],learn:['学習中','learn'],master:['習得済み','master']};
+
+/* ---------------- オンライン自動取得 ---------------- */
+async function enrichCard(card){
+  if(!navigator.onLine) return false;
+  let changed=false;
+  const q=encodeURIComponent(card.key||card.word);
+  try{
+    const r=await fetch('https://api.dictionaryapi.dev/api/v2/entries/en/'+q);
+    if(r.ok){
+      const j=await r.json();
+      if(Array.isArray(j)&&j[0]){
+        const e=j[0];
+        if(!card.phonetic){
+          card.phonetic=e.phonetic||((e.phonetics||[]).map(p=>p.text).find(Boolean))||'';
+          if(card.phonetic) changed=true;
+        }
+        const pos=[...new Set((e.meanings||[]).map(m=>m.partOfSpeech).filter(Boolean))];
+        if(pos.length&&!/品詞:/.test(card.usage)){
+          card.usage=(card.usage?card.usage+'\n':'')+'品詞: '+pos.join(', '); changed=true;
+        }
+        const exs=[];
+        for(const m of (e.meanings||[])) for(const d of (m.definitions||[])) if(d.example) exs.push(d.example);
+        for(const ex of exs.slice(0,2)){
+          if(!card.examples.some(x=>x.en===ex)){ card.examples.push({en:ex,ja:''}); changed=true; }
+        }
+      }
+    }
+  }catch(e){}
+  if(!/\s/.test(card.word)){ // コロケーション（1語のみ）
+    try{
+      const [a,b]=await Promise.all([
+        fetch('https://api.datamuse.com/words?rel_bga='+q+'&max=5').then(r=>r.ok?r.json():[]),
+        fetch('https://api.datamuse.com/words?rel_bgb='+q+'&max=5').then(r=>r.ok?r.json():[])
+      ]);
+      const stop=new Set(['a','an','the','and','or','of','to','in','on','at','for','with','by','from','as','is','are','was','were','be','been','it','its','his','her','their','this','that','which','has','have','had','not','but','he','she','they','we','you','i','my','your','our','than','then','also','more','most','other','some','any','into','about','over','after','before','when','while','who','whom','whose','what','all','no','so','if','can','could','will','would','may','might','shall','should','do','does','did','one','two','s','t']);
+      const after=(a||[]).map(x=>x.word).filter(w=>/^[a-z][a-z'-]*$/.test(w)&&!stop.has(w)).slice(0,4);
+      const before=(b||[]).map(x=>x.word).filter(w=>/^[a-z][a-z'-]*$/.test(w)&&!stop.has(w)).slice(0,4);
+      if((after.length||before.length)&&!/よく使う組合せ/.test(card.usage)){
+        const lines=[];
+        if(after.length) lines.push('「'+card.word+' ＋ '+after.join(' / ')+'」');
+        if(before.length) lines.push('「'+before.join(' / ')+' ＋ '+card.word+'」');
+        card.usage=(card.usage?card.usage+'\n':'')+'よく使う組合せ: '+lines.join(' ');
+        changed=true;
+      }
+    }catch(e){}
+  }
+  if(changed){ saveCards(); if(currentTab==='deck') renderDeck(); }
+  return changed;
+}
+
+/* ---------------- タブ ---------------- */
+let currentTab='reader';
+function switchTab(name){
+  currentTab=name;
+  $$('.tab').forEach(s=>s.classList.toggle('active', s.id==='tab-'+name));
+  $$('.tabbar button').forEach(b=>b.classList.toggle('active', b.dataset.tab===name));
+  hideTooltip(); hideSelAdd();
+  if(name==='deck') renderDeck();
+  if(name==='review') renderRevHome();
+  if(name==='settings') renderSettings();
+  window.scrollTo(0,0);
+}
+$$('.tabbar button').forEach(b=>b.addEventListener('click',()=>switchTab(b.dataset.tab)));
+function refreshBadge(){
+  const {due,newAvail}=dueCounts();
+  const n=due+newAvail; const el=$('#dueBadge');
+  el.style.display=n>0?'block':'none'; el.textContent=n>99?'99+':n;
+}
+
+/* =====================================================================
+   リーダー
+   ===================================================================== */
+let doc=lsGet(LS.doc,null); // {title, pages:[string], page}
+const readerText=$('#readerText');
+
+function setDoc(title,pages,persist){
+  doc={title:title, pages:pages, page:0};
+  if(persist!==false){
+    const size=pages.reduce((a,p)=>a+p.length,0);
+    if(size<700000){ if(!lsSet(LS.doc,doc)) toast('文章が大きいため保存されません（表示は可能）'); }
+    else toast('文章が大きいため端末には保存されません（表示は可能）');
+  }
+  renderReader();
+  switchTab('reader');
+}
+function paginate(text){
+  const paras=text.replace(/\r\n/g,'\n').split(/\n{2,}/).map(p=>p.trim()).filter(Boolean);
+  const pages=[]; let cur=[];
+  let len=0;
+  for(const p of paras){
+    cur.push(p); len+=p.length;
+    if(len>7000){ pages.push(cur.join('\n\n')); cur=[]; len=0; }
+  }
+  if(cur.length) pages.push(cur.join('\n\n'));
+  return pages.length?pages:[''];
+}
+function tokenizeHTML(text){
+  let out='', last=0, m;
+  const re=/[A-Za-z][A-Za-z'’-]*/g;
+  while((m=re.exec(text))){
+    out+=esc(text.slice(last,m.index));
+    const w=m[0];
+    out+=(w.length>=2)?('<span class="w">'+esc(w)+'</span>'):esc(w);
+    last=m.index+w.length;
+  }
+  return out+esc(text.slice(last));
+}
+function renderReader(){
+  if(!doc){ $('#readerEmpty').style.display='block'; $('#readerDoc').style.display='none'; return; }
+  $('#readerEmpty').style.display='none'; $('#readerDoc').style.display='block';
+  $('#docTitle').textContent=doc.title;
+  const page=doc.pages[doc.page]||'';
+  readerText.innerHTML=page.split(/\n{2,}/).map(p=>'<p>'+tokenizeHTML(p).replace(/\n/g,'<br>')+'</p>').join('');
+  const multi=doc.pages.length>1;
+  $('#pageNav').style.display=multi?'flex':'none';
+  if(multi){
+    $('#pgInfo').textContent=(doc.page+1)+' / '+doc.pages.length+' ページ';
+    $('#pgPrev').disabled=doc.page===0; $('#pgNext').disabled=doc.page>=doc.pages.length-1;
+  }
+  markKnownWords();
+}
+function markKnownWords(){
+  const known=knownKeySet();
+  readerText.querySelectorAll('.w').forEach(sp=>{
+    const t=sp.textContent.toLowerCase();
+    let hit=known.has(t);
+    if(!hit){ const lk=lookupWord(t); if(lk&&known.has(lk.key)) hit=true; }
+    sp.classList.toggle('known',hit);
+  });
+}
+$('#pgPrev').addEventListener('click',()=>{ if(doc&&doc.page>0){ doc.page--; lsSet(LS.doc,doc); renderReader(); window.scrollTo(0,0);} });
+$('#pgNext').addEventListener('click',()=>{ if(doc&&doc.page<doc.pages.length-1){ doc.page++; lsSet(LS.doc,doc); renderReader(); window.scrollTo(0,0);} });
+$('#btnNewDoc').addEventListener('click',()=>{ openSourceSheet(); });
+
+/* ---- 入力ソース ---- */
+function openSourceSheet(){
+  openSheet(`
+    <h2>文章を開く</h2>
+    <div class="row" style="flex-direction:column; align-items:stretch">
+      <button class="btn sub" id="ssPaste">📋 テキストを貼り付け</button>
+      <button class="btn sub" id="ssPdf">📄 PDFを開く</button>
+      <button class="btn sub" id="ssTxt">📁 テキストファイル（.txt / .md）</button>
+      <button class="btn sub" id="ssSample">✨ サンプル記事</button>
+    </div>`);
+  $('#ssPaste').addEventListener('click',()=>{ closeSheet(); openPasteSheet(); });
+  $('#ssPdf').addEventListener('click',()=>{ closeSheet(); $('#filePdf').click(); });
+  $('#ssTxt').addEventListener('click',()=>{ closeSheet(); $('#fileTxt').click(); });
+  $('#ssSample').addEventListener('click',()=>{ closeSheet(); loadSample(); });
+}
+function openPasteSheet(){
+  openSheet(`
+    <h2>テキストを貼り付け</h2>
+    <label class="fl">タイトル（任意）</label>
+    <input type="text" id="pasteTitle" placeholder="例: NEJMの記事、ニュース、メール…">
+    <label class="fl">英文</label>
+    <textarea id="pasteBody" style="min-height:180px" placeholder="ここに英文を貼り付け"></textarea>
+    <div class="row" style="margin-top:12px">
+      <button class="btn grow" id="pasteGo">読み込む</button>
+    </div>`);
+  $('#pasteGo').addEventListener('click',()=>{
+    const body=$('#pasteBody').value.trim();
+    if(!body){ toast('英文を貼り付けてください'); return; }
+    const title=$('#pasteTitle').value.trim()||'貼り付けたテキスト';
+    closeSheet(); setDoc(title,paginate(body));
+  });
+}
+$('#btnPaste').addEventListener('click',openPasteSheet);
+$('#btnTxt').addEventListener('click',()=>$('#fileTxt').click());
+$('#btnPdf').addEventListener('click',()=>$('#filePdf').click());
+$('#btnSample').addEventListener('click',loadSample);
+
+$('#fileTxt').addEventListener('change',e=>{
+  const f=e.target.files[0]; e.target.value='';
+  if(!f) return;
+  const rd=new FileReader();
+  rd.onload=()=>setDoc(f.name.replace(/\.(txt|md|text)$/i,''),paginate(String(rd.result)));
+  rd.readAsText(f);
+});
+
+/* ---- PDF ---- */
+async function ensurePdfjs(){
+  if(window.pdfjsLib) return window.pdfjsLib;
+  await new Promise((res,rej)=>{ const s=document.createElement('script'); s.src='lib/pdf.min.js'; s.onload=res; s.onerror=rej; document.head.appendChild(s); });
+  window.pdfjsLib.GlobalWorkerOptions.workerSrc='lib/pdf.worker.min.js';
+  return window.pdfjsLib;
+}
+$('#filePdf').addEventListener('change',async e=>{
+  const f=e.target.files[0]; e.target.value='';
+  if(!f) return;
+  toast('PDFを読み込んでいます…');
+  try{
+    const lib=await ensurePdfjs();
+    const buf=await f.arrayBuffer();
+    const pdf=await lib.getDocument({data:buf}).promise;
+    const nPages=Math.min(pdf.numPages,300);
+    const pages=[]; let emptyPages=0;
+    for(let i=1;i<=nPages;i++){
+      const pg=await pdf.getPage(i);
+      const tc=await pg.getTextContent();
+      let lines=[], line='', lastY=null;
+      for(const it of tc.items){
+        if(!it.str) continue;
+        const y=it.transform[5];
+        if(lastY!==null&&Math.abs(y-lastY)>3){ if(line.trim()) lines.push(line.trim()); line=''; }
+        line+=it.str+(it.str.endsWith(' ')?'':' ');
+        lastY=y;
+      }
+      if(line.trim()) lines.push(line.trim());
+      // 行→段落: 文末記号で終わらない行は次の行につなげる
+      let text='';
+      for(const l of lines){
+        if(!text){ text=l; continue; }
+        if(/[.!?:;"”]$/.test(text)) text+='\n\n'+l;
+        else text+=' '+l;
+      }
+      text=text.replace(/(\w)-\s+(?=[a-z])/g,'$1'); // ハイフン改行の結合
+      text=text.replace(/[ \t]{2,}/g,' ');          // 二重スペースの除去
+      if(!text.trim()){ emptyPages++; text='（このページからはテキストを取得できませんでした。スキャン画像のPDFはOCRが必要です）'; }
+      pages.push('【p.'+i+'】\n\n'+text);
+    }
+    if(pdf.numPages>nPages) toast('大きいPDFのため先頭'+nPages+'ページのみ読み込みました');
+    if(emptyPages===nPages){ toast('テキストが取得できないPDFでした（画像スキャンの可能性）'); return; }
+    setDoc(f.name.replace(/\.pdf$/i,''),pages);
+  }catch(err){
+    console.error(err); toast('PDFの読み込みに失敗しました');
+  }
+});
+
+/* ---- サンプル ---- */
+function loadSample(){
+  const t=`The hospital wakes early. Long before the first patients arrive, nurses move briskly through the corridors, checking equipment and reviewing the day's schedule. In the operating room, the anesthesiologist performs a meticulous inspection of the machine, tracing each hose from the wall outlet to the breathing circuit. Nothing is left to chance.
+
+At seven, the surgical team gathers for a brief huddle. They discuss the patients one by one: an elderly man with a fragile heart, a young athlete with a torn ligament, a mother expecting her second child. Each case demands a different strategy, and the team weighs the risks and benefits with care.
+
+The first operation begins smoothly. The patient drifts off within seconds, and the monitors settle into a steady rhythm. Between the surgeon and the anesthesiologist there is an unspoken agreement: one focuses on the procedure, while the other guards the patient's vital signs. When something subtle changes — a slight drop in blood pressure, a faint irregularity in the heartbeat — the team responds immediately.
+
+By noon, three operations are complete. The work is demanding, occasionally exhausting, but profoundly rewarding. Few professions offer such a vivid sense of purpose.`;
+  setDoc('サンプル: A Morning in the Hospital',paginate(t));
+}
+
+/* ---- ツールチップ（ホバー） ---- */
+const tooltip=$('#tooltip');
+const canHover=window.matchMedia('(hover: hover)').matches;
+function hideTooltip(){ tooltip.style.display='none'; }
+if(canHover){
+  readerText.addEventListener('mouseover',e=>{
+    const sp=e.target.closest('.w'); if(!sp) return;
+    const word=sp.textContent;
+    if(FUNC_WORDS.has(word.toLowerCase())){ hideTooltip(); return; }
+    const lk=lookupWord(word);
+    const card=findCardByKey(lk?lk.key:word);
+    let body;
+    if(card) body=esc(glossShort(card.gloss,80));                 // 自分の編集した訳を優先
+    else if(lk) body=esc(glossShort(lk.gloss,80));
+    else{
+      const rel=relatedLookup(word);
+      body=rel?('<span class="muted">関連語 '+esc(rel.key)+':</span> '+esc(glossShort(rel.gloss,70)))
+              :'<span class="muted">辞書に見つかりません</span>';
+    }
+    tooltip.innerHTML='<b>'+esc(word)+'</b>'+(card?' <span style="color:var(--warn)">★追加済み</span>':'')
+      +'<br>'+body
+      +'<br><span class="muted" style="font-size:11px">クリックで単語帳へ</span>';
+    tooltip.style.display='block';
+    const r=sp.getBoundingClientRect(), tw=tooltip.offsetWidth, th=tooltip.offsetHeight;
+    let x=r.left+r.width/2-tw/2; x=Math.max(8,Math.min(x,window.innerWidth-tw-8));
+    let y=r.top-th-8; if(y<8) y=r.bottom+8;
+    tooltip.style.left=x+'px'; tooltip.style.top=y+'px';
+  });
+  readerText.addEventListener('mouseout',e=>{ if(e.target.closest('.w')) hideTooltip(); });
+  window.addEventListener('scroll',hideTooltip,{passive:true});
+}
+readerText.addEventListener('click',e=>{
+  const sp=e.target.closest('.w'); if(!sp) return;
+  const sel=window.getSelection();
+  if(sel&&!sel.isCollapsed) return; // 選択中は開かない
+  hideTooltip();
+  openAddSheet(sp.textContent, contextSentence(sp));
+});
+
+/* ---- 文脈から例文を切り出す ---- */
+function contextSentence(sp){
+  const p=sp.closest('p'); if(!p) return '';
+  let before=0;
+  (function walk(node){
+    for(const ch of node.childNodes){
+      if(ch===sp) return true;
+      if(ch.nodeType===3) before+=ch.textContent.length;
+      else if(ch.nodeType===1){ if(walk(ch)) return true; }
+    }
+    return false;
+  })(p);
+  const text=p.textContent;
+  const endRe=/[.!?](?=\s|$)/g;
+  let start=0,end=text.length,m;
+  while((m=endRe.exec(text))){
+    if(m.index<before) start=m.index+1;
+    else { end=m.index+1; break; }
+  }
+  let s=text.slice(start,end).trim();
+  if(s.length>240) s='';
+  return s;
+}
+
+/* ---- 選択でフレーズ追加 ---- */
+const selAdd=$('#selAdd');
+function hideSelAdd(){ selAdd.style.display='none'; }
+document.addEventListener('selectionchange',()=>{
+  clearTimeout(selAdd._t);
+  selAdd._t=setTimeout(()=>{
+    const sel=window.getSelection();
+    if(!sel||sel.isCollapsed||!sel.rangeCount){ hideSelAdd(); return; }
+    const rng=sel.getRangeAt(0);
+    if(!readerText.contains(rng.commonAncestorContainer)){ hideSelAdd(); return; }
+    const t=String(sel).replace(/\s+/g,' ').trim();
+    if(!t||t.length>80||!/[A-Za-z]/.test(t)||t.split(' ').length<2){ hideSelAdd(); return; }
+    const r=rng.getBoundingClientRect();
+    selAdd.textContent='“'+(t.length>28?t.slice(0,28)+'…':t)+'” を単語帳に追加';
+    selAdd.dataset.phrase=t;
+    selAdd.style.display='block';
+    let x=r.left+r.width/2-selAdd.offsetWidth/2;
+    x=Math.max(8,Math.min(x,window.innerWidth-selAdd.offsetWidth-8));
+    let y=r.bottom+10; if(y+44>window.innerHeight) y=r.top-46;
+    selAdd.style.left=x+'px'; selAdd.style.top=y+'px';
+  },250);
+});
+selAdd.addEventListener('click',()=>{
+  const phrase=selAdd.dataset.phrase; hideSelAdd();
+  try{ window.getSelection().removeAllRanges(); }catch(e){}
+  openAddSheet(phrase,'');
+});
+
+/* =====================================================================
+   追加シート / カードシート
+   ===================================================================== */
+const overlay=$('#overlay'), sheet=$('#sheet'), sheetBody=$('#sheetBody');
+function openSheet(html){
+  sheetBody.innerHTML=html;
+  overlay.style.display='block'; sheet.style.display='block';
+  sheet.scrollTop=0;
+}
+function closeSheet(){ overlay.style.display='none'; sheet.style.display='none'; sheetBody.innerHTML=''; }
+overlay.addEventListener('click',closeSheet);
+
+function openAddSheet(word,ctx){
+  word=word.trim();
+  const isPhrase=/\s/.test(word);
+  const lk=isPhrase?lookupPhrase(word):lookupWord(word);
+  const existing=findCardByKey(lk?lk.key:word);
+  if(existing){ openCardSheet(existing.id); return; }
+  const head=lk?lk.key:word.toLowerCase();
+  const showHead=(lk&&lk.key!==word.toLowerCase())?' <span class="phon">→ 原形 '+esc(lk.key)+'</span>':'';
+  const rel=(!lk&&!isPhrase)?relatedLookup(word):null;
+  const glossInit=lk?lk.gloss.replace(/\s*\/\s*/g,' ／ '):(rel?('(関連語 '+rel.key+') '+rel.gloss.replace(/\s*\/\s*/g,' ／ ')):'');
+  openSheet(`
+    <div class="row">
+      <span class="sheetword">${esc(word)}</span>${showHead}
+      <button class="spk" id="addSpk" title="発音">🔊</button>
+      ${isBasicWord(head)?'<span class="tag new" style="margin-left:auto" title="使用頻度の高い基礎語">基礎2000語</span>':''}
+    </div>
+    <label class="fl">訳（編集できます）</label>
+    <textarea id="addGloss">${esc(glossInit)}</textarea>
+    ${lk?'':(rel?'<div class="small muted">内蔵辞書に無いため、関連語「'+esc(rel.key)+'」の訳を入れました。必要なら修正してください。</div>'
+              :'<div class="small muted">内蔵辞書に見つかりませんでした。訳を入力してください。</div>')}
+    ${ctx?`<label class="fl"><input type="checkbox" id="addCtx" checked style="width:auto"> 出てきた文を例文として保存</label>
+    <div class="exlist"><div class="ex">${esc(ctx)}</div></div>`:''}
+    <div class="row" style="margin-top:14px">
+      <button class="btn grow" id="addGo">単語帳に追加</button>
+      <button class="btn sub" id="addCancel">閉じる</button>
+    </div>
+    <div class="small muted" style="margin-top:8px">追加後、オンラインなら例文・発音記号・よく使う組合せを自動取得します。</div>
+  `);
+  $('#addSpk').addEventListener('click',()=>speak(word));
+  $('#addCancel').addEventListener('click',closeSheet);
+  $('#addGo').addEventListener('click',()=>{
+    const gloss=$('#addGloss').value.trim();
+    const useCtx=ctx&&$('#addCtx')&&$('#addCtx').checked;
+    const card=addCard({
+      word:lk?lk.key:word, key:head, gloss:gloss,
+      examples:useCtx?[{en:ctx,ja:''}]:[],
+      source:doc?doc.title:''
+    });
+    closeSheet();
+    toast('「'+card.word+'」を単語帳に追加しました');
+    markKnownWords(); renderRevHome._dirty=true; refreshBadge();
+  });
+}
+
+function srsLabel(s){
+  if(s.reps===0) return '未学習';
+  return '間隔 '+s.iv+'日・次回 '+s.due;
+}
+function openCardSheet(id){
+  const c=findCard(id); if(!c) return;
+  const st=STATUS_LABEL[cardStatus(c)];
+  openSheet(`
+    <div class="row">
+      <span class="sheetword">${esc(c.word)}</span>
+      <span class="phon">${esc(c.phonetic||'')}</span>
+      <button class="spk" id="cSpk">🔊</button>
+      <span class="tag ${st[1]}" style="margin-left:auto">${st[0]}</span>
+    </div>
+    <label class="fl">訳</label>
+    <textarea id="cGloss">${esc(c.gloss)}</textarea>
+    <label class="fl">使い方（語法・よく使う組合せなど）</label>
+    <textarea id="cUsage" placeholder="例: between A and B（AとBの間に）">${esc(c.usage)}</textarea>
+    <label class="fl">例文</label>
+    <div class="exlist" id="cExs"></div>
+    <div class="row">
+      <button class="btn sub small" id="cExAdd">＋ 例文を追加</button>
+      <button class="btn sub small" id="cFetch">🌐 例文・発音記号を自動取得</button>
+    </div>
+    <div class="small muted" style="margin-top:10px">
+      出典: ${esc(c.source||'—')} ／ 追加日: ${esc(c.createdAt.slice(0,10))}<br>
+      英→和: ${srsLabel(c.f)} ／ 和→英: ${c.r.due?srsLabel(c.r):'英→和に合格すると解放'}
+    </div>
+    <div class="row" style="margin-top:12px">
+      <button class="btn grow" id="cSave">保存</button>
+      <button class="btn danger" id="cDel">削除</button>
+    </div>
+  `);
+  function renderExs(){
+    $('#cExs').innerHTML=c.examples.map((ex,i)=>`
+      <div class="ex">
+        <input type="text" data-i="${i}" data-k="en" value="${esc(ex.en)}" placeholder="英文" style="margin-bottom:4px">
+        <input type="text" data-i="${i}" data-k="ja" value="${esc(ex.ja||'')}" placeholder="和訳（任意）">
+        <div class="row" style="justify-content:flex-end; margin-top:4px">
+          <button class="btn sub small" data-del="${i}">削除</button>
+        </div>
+      </div>`).join('')||'<div class="small muted">例文はまだありません</div>';
+    $('#cExs').querySelectorAll('input').forEach(inp=>{
+      inp.addEventListener('input',()=>{ c.examples[+inp.dataset.i][inp.dataset.k]=inp.value; });
+    });
+    $('#cExs').querySelectorAll('[data-del]').forEach(b=>{
+      b.addEventListener('click',()=>{ c.examples.splice(+b.dataset.del,1); renderExs(); });
+    });
+  }
+  renderExs();
+  $('#cSpk').addEventListener('click',()=>speak(c.word));
+  $('#cExAdd').addEventListener('click',()=>{ c.examples.push({en:'',ja:''}); renderExs(); });
+  $('#cFetch').addEventListener('click',async()=>{
+    toast('取得中…');
+    const ok=await enrichCard(c);
+    toast(ok?'取得しました':'新しい情報は見つかりませんでした');
+    openCardSheet(id);
+  });
+  $('#cSave').addEventListener('click',()=>{
+    c.gloss=$('#cGloss').value.trim(); c.usage=$('#cUsage').value.trim();
+    c.examples=c.examples.filter(ex=>ex.en.trim());
+    saveCards(); closeSheet(); toast('保存しました');
+    if(currentTab==='deck') renderDeck(); markKnownWords();
+  });
+  $('#cDel').addEventListener('click',()=>{
+    if(!confirm('「'+c.word+'」を削除しますか？')) return;
+    cards=cards.filter(x=>x.id!==id); saveCards(); closeSheet(); toast('削除しました');
+    if(currentTab==='deck') renderDeck(); markKnownWords(); renderRevHome._dirty=true;
+  });
+}
+
+/* =====================================================================
+   単語帳
+   ===================================================================== */
+let deckFilter='all';
+$('#deckChips').addEventListener('click',e=>{
+  const b=e.target.closest('button'); if(!b) return;
+  deckFilter=b.dataset.f;
+  $$('#deckChips button').forEach(x=>x.classList.toggle('active',x===b));
+  renderDeck();
+});
+$('#deckSearch').addEventListener('input',()=>renderDeck());
+$('#deckSort').addEventListener('change',()=>renderDeck());
+$('#btnAddManual').addEventListener('click',()=>{
+  openSheet(`
+    <h2>単語を手動で追加</h2>
+    <label class="fl">英単語・フレーズ</label>
+    <input type="text" id="mWord" placeholder="例: deteriorate / between A and B" autocapitalize="off">
+    <label class="fl">訳（空欄なら辞書から自動で入ります）</label>
+    <textarea id="mGloss"></textarea>
+    <div class="row" style="margin-top:12px"><button class="btn grow" id="mGo">追加</button></div>
+  `);
+  const mw=$('#mWord');
+  mw.addEventListener('change',()=>{
+    const w=mw.value.trim(); if(!w) return;
+    const lk=/\s/.test(w)?lookupPhrase(w):lookupWord(w);
+    if(lk&&!$('#mGloss').value) $('#mGloss').value=lk.gloss.replace(/\s*\/\s*/g,' ／ ');
+  });
+  $('#mGo').addEventListener('click',()=>{
+    const w=mw.value.trim(); if(!w){ toast('単語を入力してください'); return; }
+    if(findCardByKey(w)){ toast('すでに単語帳にあります'); return; }
+    const lk=/\s/.test(w)?lookupPhrase(w):lookupWord(w);
+    addCard({word:w, key:lk?lk.key:w, gloss:$('#mGloss').value.trim()||(lk?lk.gloss.replace(/\s*\/\s*/g,' ／ '):''), source:'手動追加'});
+    closeSheet(); toast('追加しました'); renderDeck(); refreshBadge();
+  });
+});
+function nextDue(c){
+  const ds=[c.f,c.r].filter(s=>s.due&&(s.reps>0||s.lapses>0||s===c.r)).map(s=>s.due);
+  return ds.length?ds.sort()[0]:'9999-99-99';
+}
+function renderDeck(){
+  const q=$('#deckSearch').value.trim().toLowerCase();
+  let list=cards.slice();
+  if(deckFilter!=='all') list=list.filter(c=>cardStatus(c)===deckFilter);
+  if(q) list=list.filter(c=>c.word.toLowerCase().includes(q)||c.gloss.toLowerCase().includes(q));
+  const sort=$('#deckSort').value;
+  if(sort==='abc') list.sort((a,b)=>a.word.localeCompare(b.word));
+  else if(sort==='due') list.sort((a,b)=>nextDue(a)<nextDue(b)?-1:1);
+  $('#deckEmpty').style.display=(cards.length===0)?'block':'none';
+  $('#deckList').innerHTML=list.map(c=>{
+    const st=STATUS_LABEL[cardStatus(c)];
+    const due=[c.f,c.r].filter(s=>s.due&&s.reps>0).map(s=>s.due).sort()[0];
+    return `<div class="wordrow" data-id="${c.id}">
+      <div style="min-width:0">
+        <div class="w1">${esc(c.word)}</div>
+        <div class="g1">${esc(glossShort(c.gloss,40)||'（訳未入力）')}</div>
+      </div>
+      <div class="meta">
+        <span class="tag ${st[1]}">${st[0]}</span><br>
+        ${due?('次回 '+esc(due.slice(5)).replace('-','/')):''}
+      </div>
+    </div>`;
+  }).join('');
+  $('#topInfo').textContent=currentTab==='deck'?(cards.length+'枚'):'';
+  $('#deckList').querySelectorAll('.wordrow').forEach(r=>{
+    r.addEventListener('click',()=>openCardSheet(r.dataset.id));
+  });
+}
+
+/* =====================================================================
+   復習 (SM-2)
+   ===================================================================== */
+function sm2(s,q){
+  if(q<3){ s.reps=0; s.iv=0; s.lapses++; s.due=todayStr(); }
+  else{
+    s.reps++;
+    s.iv=(s.reps===1)?1:(s.reps===2)?6:Math.max(1,Math.round(s.iv*s.ef));
+    s.ef=Math.max(1.3, s.ef+(0.1-(5-q)*(0.08+(5-q)*0.02)));
+    s.due=addDays(todayStr(),s.iv);
+  }
+}
+function dueCounts(){
+  const today=todayStr();
+  let due=0,newCount=0;
+  for(const c of cards){
+    if(seen(c.f)&&c.f.due&&c.f.due<=today) due++;
+    if(c.r.due&&c.r.due<=today) due++;   // 和→英（解放済みの初回・lapse含む）
+    if(!seen(c.f)) newCount++;
+  }
+  const introLeft=Math.max(0,settings.newPerDay-(dayStat().intro||0));
+  return {due, newTotal:newCount, newAvail:Math.min(newCount,introLeft)};
+}
+function buildQueue(){
+  const today=todayStr();
+  const dueItems=[], newItems=[];
+  for(const c of cards){
+    if(seen(c.f)&&c.f.due&&c.f.due<=today) dueItems.push({id:c.id,dir:'f'});
+    if(c.r.due&&c.r.due<=today) dueItems.push({id:c.id,dir:'r'});
+    if(!seen(c.f)) newItems.push({id:c.id,dir:'f',isNew:true});
+  }
+  shuffle(dueItems);
+  newItems.sort((a,b)=>findCard(a.id).createdAt<findCard(b.id).createdAt?-1:1);
+  const introLeft=Math.max(0,settings.newPerDay-(dayStat().intro||0));
+  return dueItems.concat(newItems.slice(0,introLeft));
+}
+let rev=null; // {queue, idx, done, ok, total}
+function renderRevHome(){
+  const {due,newAvail,newTotal}=dueCounts();
+  $('#stDue').textContent=due;
+  $('#stNew').textContent=newAvail+(newTotal>newAvail?' / '+newTotal:'');
+  $('#stStreak').textContent=calcStreak();
+  $('#lblNewPerDay').textContent=settings.newPerDay;
+  $('#btnStartReview').disabled=(due+newAvail)===0;
+  $('#btnStartReview').textContent=(due+newAvail)===0?'✔ 今日の復習は完了です':'▶ 復習をはじめる（'+(due+newAvail)+'枚）';
+  const canQuiz=cards.length>=4;
+  ['#btnQuizEJ','#btnQuizJE','#btnQuizMix'].forEach(s=>$(s).disabled=!canQuiz);
+  renderStatsPanel();
+  refreshBadge();
+}
+function calcStreak(){
+  let n=0, d=todayStr();
+  if(!(stats.byDay[d]&&stats.byDay[d].reviewed>0)) d=addDays(d,-1);
+  while(stats.byDay[d]&&stats.byDay[d].reviewed>0){ n++; d=addDays(d,-1); }
+  return n;
+}
+$('#btnStartReview').addEventListener('click',()=>{
+  const queue=buildQueue();
+  if(!queue.length){ toast('今日の復習はありません'); return; }
+  rev={queue:queue, idx:0, ok:0, done:0, total:queue.length, mode:'srs'};
+  $('#revHome').style.display='none'; $('#revSession').style.display='block';
+  showRevCard();
+});
+$('#btnRevQuit').addEventListener('click',endReview);
+function endReview(){
+  rev=null;
+  $('#revHome').style.display='block'; $('#revSession').style.display='none';
+  renderRevHome();
+}
+function showRevCard(){
+  if(!rev) return;
+  if(rev.idx>=rev.queue.length){ showRevDone(); return; }
+  const item=rev.queue[rev.idx];
+  const c=findCard(item.id);
+  if(!c){ rev.idx++; showRevCard(); return; }
+  $('#revProg').style.width=Math.round(100*rev.done/Math.max(1,rev.total))+'%';
+  $('#revCount').textContent=(rev.done)+' / '+rev.total;
+  const stage=$('#revStage');
+  if(rev.mode==='srs'){
+    const isF=item.dir==='f';
+    stage.innerHTML=`
+      <div class="rev-dir"><span>${isF?'英 → 和':'和 → 英'}${item.isNew?' ・新規':''}</span></div>
+      <div class="rev-front ${isF?'':'jp'}">${esc(isF?c.word:(glossShort(c.gloss,120)||'（訳未入力）'))}</div>
+      ${isF?`<div style="text-align:center"><button class="spk" id="rvSpk">🔊</button></div>`:''}
+      <div class="grow"></div>
+      <button class="btn" id="rvShow" style="width:100%; padding:13px">答えを見る</button>`;
+    const spk=$('#rvSpk'); if(spk) spk.addEventListener('click',()=>speak(c.word));
+    $('#rvShow').addEventListener('click',()=>showRevAnswer(item,c));
+    $('#revKbd').textContent='スペース: 答えを見る';
+  }
+}
+function showRevAnswer(item,c){
+  const isF=item.dir==='f';
+  const exHtml=c.examples.slice(0,2).map(ex=>`<div class="ex" data-say="${esc(ex.en)}" style="cursor:pointer" title="タップで読み上げ">🔉 ${esc(ex.en)}${ex.ja?`<div class="ja">${esc(ex.ja)}</div>`:''}</div>`).join('');
+  $('#revStage').innerHTML=`
+    <div class="rev-dir"><span>${isF?'英 → 和':'和 → 英'}</span></div>
+    <div class="rev-front" style="font-size:${isF?'26px':'30px'}">${esc(c.word)} <button class="spk" id="rvSpk2">🔊</button></div>
+    ${c.phonetic?`<div style="text-align:center" class="phon">${esc(c.phonetic)}</div>`:''}
+    <div class="rev-answer">
+      <div class="dictgloss">${esc(c.gloss||'（訳未入力）')}</div>
+      ${c.usage?`<div class="small muted" style="margin-top:6px; white-space:pre-wrap">${esc(c.usage)}</div>`:''}
+      ${exHtml?`<div class="exlist" style="margin-top:6px">${exHtml}</div>`:''}
+    </div>
+    <div class="grade4">
+      <button class="g0" data-q="0">もう一度<small>すぐ再出題</small></button>
+      <button class="g3" data-q="3">難しい<small></small></button>
+      <button class="g4" data-q="4">普通<small></small></button>
+      <button class="g5" data-q="5">簡単<small></small></button>
+    </div>`;
+  const s=item.dir==='f'?c.f:c.r;
+  // 間隔プレビュー
+  const prev={};
+  for(const q of [3,4,5]){
+    const t=JSON.parse(JSON.stringify(s)); sm2(t,q); prev[q]=t.iv+'日後';
+  }
+  $$('#revStage .grade4 button').forEach(b=>{
+    const q=+b.dataset.q;
+    if(q>=3) b.querySelector('small').textContent=prev[q];
+    b.addEventListener('click',()=>gradeCard(item,c,q));
+  });
+  $('#rvSpk2').addEventListener('click',()=>speak(c.word));
+  $$('#revStage .ex[data-say]').forEach(el=>el.addEventListener('click',()=>speak(el.dataset.say)));
+  if(settings.autoSpeak) speak(c.word);
+  $('#revKbd').textContent='1: もう一度 ／ 2: 難しい ／ 3: 普通 ／ 4: 簡単';
+}
+function gradeCard(item,c,q){
+  const s=item.dir==='f'?c.f:c.r;
+  const first=(s.reps===0);
+  sm2(s,q);
+  if(item.dir==='f'&&q>=3&&c.r.due===null){ c.r.due=addDays(todayStr(),1); } // 和→英を解放
+  if(item.isNew&&first){ dayStat().intro=(dayStat().intro||0)+1; }
+  const st=dayStat(); st.reviewed++; if(q>=3) st.correct++;
+  saveStats(); saveCards();
+  rev.done++;
+  if(q<3){ rev.queue.push({id:item.id,dir:item.dir}); rev.total++; }
+  else rev.ok++;
+  rev.idx++;
+  showRevCard();
+}
+function showRevDone(){
+  $('#revProg').style.width='100%';
+  $('#revStage').innerHTML=`
+    <div style="text-align:center; margin:auto 0; padding:30px 0">
+      <div style="font-size:44px">🎉</div>
+      <h2 style="margin:8px 0">おつかれさまでした！</h2>
+      <div class="muted">${rev.done}枚 復習 ／ 正答 ${rev.ok}枚（${rev.done?Math.round(100*rev.ok/rev.done):0}%）</div>
+      <button class="btn" id="rvBack" style="margin-top:18px">もどる</button>
+    </div>`;
+  $('#revKbd').textContent='';
+  $('#rvBack').addEventListener('click',endReview);
+}
+document.addEventListener('keydown',e=>{
+  if(!rev||currentTab!=='review') return;
+  if(e.key===' '){ const b=$('#rvShow'); if(b){ e.preventDefault(); b.click(); } }
+  if(['1','2','3','4'].includes(e.key)){
+    const map={1:0,2:3,3:4,4:5};
+    const b=$('#revStage .grade4 [data-q="'+map[e.key]+'"]'); if(b) b.click();
+  }
+});
+
+/* ---------------- 4択クイックテスト ---------------- */
+function startQuiz(mode){
+  if(cards.length<4){ toast('カードが4枚以上必要です'); return; }
+  const pool=shuffle(cards.slice()).slice(0,10);
+  rev={mode:'quiz', quiz:pool.map(c=>{
+    const dir=(mode==='mix')?(Math.random()<0.5?'f':'r'):mode;
+    const others=shuffle(cards.filter(x=>x.id!==c.id)).slice(0,3);
+    return {card:c, dir:dir, opts:shuffle([c].concat(others))};
+  }), idx:0, ok:0, done:0, total:pool.length};
+  $('#revHome').style.display='none'; $('#revSession').style.display='block';
+  showQuiz();
+}
+$('#btnQuizEJ').addEventListener('click',()=>startQuiz('f'));
+$('#btnQuizJE').addEventListener('click',()=>startQuiz('r'));
+$('#btnQuizMix').addEventListener('click',()=>startQuiz('mix'));
+$('#btnQuizType').addEventListener('click',startTypeQuiz);
+
+/* ---- 和→英タイピング ---- */
+function startTypeQuiz(){
+  if(cards.length<1){ toast('カードがありません'); return; }
+  const pool=shuffle(cards.filter(c=>c.gloss).slice()).slice(0,10);
+  if(!pool.length){ toast('訳の入ったカードがありません'); return; }
+  rev={mode:'type', quiz:pool, idx:0, ok:0, total:pool.length, hint:0};
+  $('#revHome').style.display='none'; $('#revSession').style.display='block';
+  showTypeQuiz();
+}
+function showTypeQuiz(){
+  if(rev.idx>=rev.quiz.length){
+    $('#revStage').innerHTML=`
+      <div style="text-align:center; margin:auto 0; padding:30px 0">
+        <div style="font-size:44px">${rev.ok===rev.total?'💯':'⌨️'}</div>
+        <h2 style="margin:8px 0">${rev.ok} / ${rev.total} 正解</h2>
+        <button class="btn" id="rvBack" style="margin-top:14px">もどる</button>
+      </div>`;
+    $('#rvBack').addEventListener('click',endReview);
+    $('#revKbd').textContent='';
+    return;
+  }
+  const c=rev.quiz[rev.idx];
+  rev.hint=0;
+  $('#revProg').style.width=Math.round(100*rev.idx/rev.total)+'%';
+  $('#revCount').textContent=(rev.idx+1)+' / '+rev.total;
+  $('#revStage').innerHTML=`
+    <div class="rev-dir"><span>和 → 英・タイピング</span></div>
+    <div class="rev-front jp">${esc(glossShort(c.gloss,100))}</div>
+    ${c.usage?`<div class="small muted" style="text-align:center; white-space:pre-wrap">${esc(glossShort(c.usage,60))}</div>`:''}
+    <div style="margin-top:14px">
+      <input type="text" id="tqInput" placeholder="英語でタイプ（Enterで判定）" autocapitalize="off" autocomplete="off" autocorrect="off" spellcheck="false" style="font-size:18px; text-align:center">
+    </div>
+    <div class="row" style="margin-top:10px">
+      <button class="btn grow" id="tqCheck">判定</button>
+      <button class="btn sub" id="tqHint">ヒント</button>
+      <button class="btn sub" id="tqGiveup">答えを見る</button>
+    </div>
+    <div id="tqFb" style="text-align:center; margin-top:12px; font-size:16px; min-height:28px"></div>`;
+  const input=$('#tqInput'); input.focus();
+  function norm(s){ return s.toLowerCase().replace(/’/g,"'").replace(/\s+/g,' ').trim(); }
+  function judge(){
+    const v=norm(input.value); if(!v) return;
+    const okAns=[norm(c.word), norm(c.key||'')];
+    if(okAns.includes(v)){
+      rev.ok++; $('#tqFb').innerHTML='<span style="color:var(--good); font-weight:700">◎ 正解！ '+esc(c.word)+'</span>';
+      speak(c.word); next(900);
+    }else{
+      $('#tqFb').innerHTML='<span style="color:var(--bad); font-weight:700">✕ もう一度</span>';
+      input.select();
+    }
+  }
+  function giveup(){
+    $('#tqFb').innerHTML='<span style="color:var(--warn); font-weight:700">答え: '+esc(c.word)+'</span>';
+    speak(c.word); next(1600);
+  }
+  let advanced=false;
+  function next(ms){
+    if(advanced) return; advanced=true;
+    setTimeout(()=>{ rev.idx++; showTypeQuiz(); }, ms);
+  }
+  $('#tqCheck').addEventListener('click',judge);
+  input.addEventListener('keydown',e=>{ if(e.key==='Enter') judge(); });
+  $('#tqHint').addEventListener('click',()=>{
+    rev.hint=Math.min(rev.hint+1, c.word.length);
+    $('#tqFb').innerHTML='<span class="muted">ヒント: <b>'+esc(c.word.slice(0,rev.hint))+'</b>'+'･'.repeat(Math.max(0,c.word.length-rev.hint))+'</span>';
+    input.focus();
+  });
+  $('#tqGiveup').addEventListener('click',giveup);
+  $('#revKbd').textContent='';
+}
+function optLabel(c,dir){ return dir==='f'?(glossShort(c.gloss,60)||'（訳未入力）'):c.word; }
+function showQuiz(){
+  if(rev.idx>=rev.quiz.length){
+    $('#revStage').innerHTML=`
+      <div style="text-align:center; margin:auto 0; padding:30px 0">
+        <div style="font-size:44px">${rev.ok===rev.total?'💯':'📝'}</div>
+        <h2 style="margin:8px 0">${rev.ok} / ${rev.total} 正解</h2>
+        <button class="btn" id="rvBack" style="margin-top:14px">もどる</button>
+      </div>`;
+    $('#rvBack').addEventListener('click',endReview);
+    $('#revKbd').textContent='';
+    return;
+  }
+  const q=rev.quiz[rev.idx];
+  $('#revProg').style.width=Math.round(100*rev.idx/rev.total)+'%';
+  $('#revCount').textContent=(rev.idx+1)+' / '+rev.total;
+  const front=q.dir==='f'?q.card.word:(glossShort(q.card.gloss,100)||'（訳未入力）');
+  $('#revStage').innerHTML=`
+    <div class="rev-dir"><span>${q.dir==='f'?'英 → 和':'和 → 英'}・4択</span></div>
+    <div class="rev-front ${q.dir==='f'?'':'jp'}" style="font-size:${q.dir==='f'?'28px':'19px'}">${esc(front)}</div>
+    <div id="qOpts">${q.opts.map((o,i)=>`<button class="choice" data-i="${i}">${esc(optLabel(o,q.dir))}</button>`).join('')}</div>`;
+  $('#revKbd').textContent='';
+  $$('#qOpts .choice').forEach(b=>{
+    b.addEventListener('click',()=>{
+      const chosen=q.opts[+b.dataset.i];
+      const correct=chosen.id===q.card.id;
+      if(correct) rev.ok++;
+      $$('#qOpts .choice').forEach((x,i)=>{
+        if(q.opts[i].id===q.card.id) x.classList.add('correct');
+        else if(x===b) x.classList.add('wrong');
+        x.disabled=true;
+      });
+      if(q.dir==='r'||q.dir==='f') speakMaybe(q.card.word);
+      setTimeout(()=>{ rev.idx++; showQuiz(); }, correct?650:1400);
+    });
+  });
+}
+function speakMaybe(w){ if(settings.autoSpeak) speak(w); }
+
+/* ---------------- 統計パネル ---------------- */
+function renderStatsPanel(){
+  const days=[]; let d=todayStr();
+  for(let i=0;i<14;i++){ days.unshift(d); d=addDays(d,-1); }
+  const mx=Math.max(1,...days.map(k=>{const s=stats.byDay[k]; return s?Math.max(s.added,s.reviewed):0;}));
+  const total=cards.length, master=cards.filter(c=>cardStatus(c)==='master').length;
+  $('#revStats').innerHTML=`
+    <h2>学習の記録</h2>
+    <div class="card">
+      <div class="small muted">直近14日（<span style="color:#f59e0b">■</span>追加 / <span style="color:var(--accent)">■</span>復習）</div>
+      <div class="bars">${days.map(k=>{
+        const s=stats.byDay[k]||{added:0,reviewed:0};
+        return `<div class="b"><i class="add" style="height:${Math.round(56*s.added/mx)}px"></i><i class="rev" style="height:${Math.round(56*s.reviewed/mx)}px"></i></div>`;
+      }).join('')}</div>
+      <div class="barlbl">${days.map(k=>`<span>${+k.slice(8)}</span>`).join('')}</div>
+      <div class="small muted" style="margin-top:8px">カード合計 ${total}枚 ／ 習得済み ${master}枚</div>
+    </div>`;
+}
+
+/* =====================================================================
+   設定
+   ===================================================================== */
+function renderSettings(){
+  $('#setNewPerDay').value=settings.newPerDay;
+  $('#setTheme').value=settings.theme;
+  $('#setAutoSpeak').value=settings.autoSpeak?'1':'0';
+  $('#setAutoFetch').value=settings.autoFetch?'1':'0';
+  $('#verLabel').textContent='v'+VERSION;
+  const base=location.origin+location.pathname.replace(/index\.html$/,'');
+  $('#bmCode').textContent=`javascript:(function(){var s=String(getSelection()).trim();if(!s){alert('英単語を選択してから押してください');return;}location.href='${base}?add='+encodeURIComponent(s);})()`;
+  $('#dataInfo').textContent='カード '+cards.length+'枚 ／ 保存先: この端末のブラウザ内 (localStorage)';
+}
+$('#setNewPerDay').addEventListener('change',e=>{ settings.newPerDay=Math.max(0,Math.min(100,+e.target.value||0)); saveSettings(); });
+$('#setTheme').addEventListener('change',e=>{ settings.theme=e.target.value; saveSettings(); applyTheme(); });
+$('#setAutoSpeak').addEventListener('change',e=>{ settings.autoSpeak=e.target.value==='1'; saveSettings(); });
+$('#setAutoFetch').addEventListener('change',e=>{ settings.autoFetch=e.target.value==='1'; saveSettings(); });
+$('#btnCopyBm').addEventListener('click',async()=>{
+  try{ await navigator.clipboard.writeText($('#bmCode').textContent); toast('コピーしました'); }
+  catch(e){ toast('コピーできませんでした。長押しで選択してください'); }
+});
+function download(name,text,type){
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob([text],{type:type||'application/json'}));
+  a.download=name; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),5000);
+}
+$('#btnExport').addEventListener('click',()=>{
+  download('hlvocab-backup-'+todayStr()+'.json', JSON.stringify({app:'highlight-vocab',version:VERSION,exportedAt:new Date().toISOString(),cards:cards,settings:settings,stats:stats},null,1));
+  toast('書き出しました');
+});
+$('#btnImport').addEventListener('click',()=>$('#fileImport').click());
+$('#fileImport').addEventListener('change',e=>{
+  const f=e.target.files[0]; e.target.value='';
+  if(!f) return;
+  const rd=new FileReader();
+  rd.onload=()=>{
+    try{
+      const j=JSON.parse(String(rd.result));
+      if(!Array.isArray(j.cards)) throw new Error('bad');
+      const ids=new Set(cards.map(c=>c.id));
+      const keys=new Set(cards.map(c=>c.key));
+      let n=0;
+      for(const c of j.cards){ if(!ids.has(c.id)&&!keys.has(c.key)){ cards.push(c); n++; } }
+      saveCards(); renderDeck(); renderSettings(); toast(n+'枚を取り込みました');
+    }catch(err){ toast('読み込めないファイルです'); }
+  };
+  rd.readAsText(f);
+});
+$('#btnAnki').addEventListener('click',()=>{
+  const rows=cards.map(c=>[c.word, c.gloss, c.usage, c.examples.map(x=>x.en+(x.ja?'｜'+x.ja:'')).join(' ⏎ ')]
+    .map(s=>String(s||'').replace(/\t/g,' ').replace(/\n/g,' ')).join('\t'));
+  download('hlvocab-anki-'+todayStr()+'.tsv', rows.join('\n'), 'text/tab-separated-values');
+  toast('Anki用TSVを書き出しました');
+});
+$('#btnWipe').addEventListener('click',()=>{
+  if(!confirm('すべてのカード（'+cards.length+'枚）を削除します。よろしいですか？')) return;
+  if(!confirm('本当に削除しますか？この操作は元に戻せません')) return;
+  cards=[]; saveCards(); renderDeck(); renderSettings(); toast('削除しました'); markKnownWords();
+});
+
+/* =====================================================================
+   起動処理
+   ===================================================================== */
+applyTheme();
+renderReader();
+refreshBadge();
+// URL ?add=word （ブックマークレット経由）
+(function(){
+  const p=new URLSearchParams(location.search);
+  const w=p.get('add');
+  if(w){
+    history.replaceState(null,'',location.pathname);
+    setTimeout(()=>openAddSheet(w.slice(0,80),''),300);
+  }
+})();
+// 辞書ロード後に既知マークを更新
+window.addEventListener('load',()=>{
+  const idle=window.requestIdleCallback||function(f){setTimeout(f,400);};
+  idle(()=>{ ensureDict(); markKnownWords(); });
+});
+// Service Worker
+if('serviceWorker' in navigator && location.protocol.startsWith('http')){
+  window.addEventListener('load',()=>{
+    navigator.serviceWorker.register('sw.js').then(reg=>{ reg.update().catch(()=>{}); }).catch(()=>{});
+    let reloaded=false;
+    navigator.serviceWorker.addEventListener('controllerchange',()=>{ if(reloaded) return; reloaded=true; location.reload(); });
+  });
+}
+</script>
+</body>
+</html>
