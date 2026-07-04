@@ -34,7 +34,10 @@ else
   echo "△ ダブルコピー監視がまだ起動していません（数秒後に自動起動します）"
 fi
 
-# --- 3. クイックアクション + ショートカット ---
+# --- 3. Mac アプリ（/Applications + Dock）---
+bash macos/make_app.sh
+
+# --- 4. クイックアクション + ショートカット ---
 mkdir -p ~/Library/Services
 rm -rf ~/Library/Services/単語帳に追加.workflow
 cp -R "macos/単語帳に追加.workflow" ~/Library/Services/
