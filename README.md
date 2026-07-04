@@ -45,3 +45,12 @@
 2. **単語帳**: 訳・使い方・例文を編集可能。オンラインなら自動取得ボタンあり。
 3. **復習**: SM-2。英→和に合格すると翌日から和→英が解放される2方向学習。4択クイックテストつき。
 4. **どこからでも追加**: 設定タブのブックマークレットで、任意のWebページから選択した単語を追加。
+
+## 別のMacへの導入（3分）
+前提: いつものGitHub引き継ぎ設定（SSH鍵）が済んでいるMac。
+```bash
+git clone git@github.com:nobumitsu-3141/highlight-vocab.git ~/Desktop/highlight-vocab
+open ~/Desktop/highlight-vocab   # Finderで「セットアップ.command」をダブルクリック
+```
+またはそのMacのClaude Codeに「GitHubの highlight-vocab を ~/Desktop に clone してセットアップして」と頼む。
+※単語帳データ(カード)は端末ごとに保存される（Mac間の同期は今後の課題・Firebase候補）。
