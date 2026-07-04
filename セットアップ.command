@@ -37,6 +37,10 @@ fi
 # --- 3. Mac アプリ（/Applications + Dock）---
 bash macos/make_app.sh
 
+# --- 3b. Chrome拡張をデスクトップから見つけやすく ---
+ln -sfn "$SRC/chrome-extension" ~/Desktop/単語帳Chrome拡張
+echo "✔ デスクトップに「単語帳Chrome拡張」リンクを作成しました"
+
 # --- 4. クイックアクション + ショートカット ---
 mkdir -p ~/Library/Services
 rm -rf ~/Library/Services/単語帳に追加.workflow
