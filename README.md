@@ -39,6 +39,15 @@
 4. アプリ（localhost:8331）を開くと `/api/inbox` から自動取り込み → SM-2 の新規カードに
 5. 辞書は拡張内にも同梱（Option+ホバー用）。**dict.js を更新したら `chrome-extension/dict.js` にもコピー**すること
 
+## 主な機能（v1.4.0 追加分）
+- **難単語の自動マーク＋⚡一括追加**: 頻度リスト(FrequencyWords/OpenSubtitles, CC-BY-SA-4.0, 20,376語)で
+  稀な語に点線マーク → チェックリストで一括追加。感度は設定(オフ/6000/10000/16000)。
+- **クラウド受信箱**: iPhoneの共有シート(ショートカット)が `<同期endpoint>-inbox.json` に {"w":"単語"} をPOST →
+  各端末の同期時に自動カード化して削除。ショートカット手順は設定タブに記載。
+- **単語リストのまとめて追加**(1行1語貼り付け)
+- server.py が `Cache-Control: no-cache` を送出(localhostのHTTPキャッシュで古いdict.jsを掴む事故を防止)
+- `.nojekyll` でPagesビルドをJekyllスキップ
+
 ## 主な機能（v1.3.0 追加分）
 - **クラウド同期**: Firebase RTDB REST（english-canada-app と同方式、設定タブにURL＋同期コード）。
   マージは updatedAt 新しい方勝ち＋削除墓標(hlv.tombs.v1、90日で自動削除)。カードと学習記録を同期。
