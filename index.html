@@ -241,6 +241,7 @@ code.bm{display:block; background:var(--bg); border:1px solid var(--border); bor
     <button data-f="all" class="active">すべて</button>
     <button data-f="new">新規</button>
     <button data-f="learn">学習中</button>
+    <button data-f="hard">苦手</button>
     <button data-f="master">習得済み</button>
     <select id="deckSort" style="width:auto; margin-left:auto; padding:4px 8px; font-size:12.5px; border-radius:16px">
       <option value="new">追加順</option>
@@ -262,6 +263,7 @@ code.bm{display:block; background:var(--bg); border:1px solid var(--border); bor
       <div class="card"><div class="num" id="stNew">0</div><div class="lbl">新規カード</div></div>
       <div class="card"><div class="num" id="stStreak">0</div><div class="lbl">連続日数</div></div>
     </div>
+    <div class="small muted" id="todayLine" style="margin:0 2px 8px"></div>
     <button class="btn" id="btnStartReview" style="width:100%; padding:14px; font-size:16px">▶ 復習をはじめる</button>
     <div class="small muted" style="margin:6px 2px">
       期限が来たカード＋新規カード（1日 <span id="lblNewPerDay"></span> 枚まで）を出題。
@@ -304,8 +306,24 @@ code.bm{display:block; background:var(--bg); border:1px solid var(--border); bor
     </select>
     <label class="fl">復習で答えを表示したとき自動で発音する</label>
     <select id="setAutoSpeak"><option value="0">オフ</option><option value="1">オン</option></select>
-    <label class="fl">カード追加時に例文・発音記号を自動取得（オンライン時のみ）</label>
+    <label class="fl">カード追加時に例文・発音記号・例文の和訳を自動取得（オンライン時のみ）</label>
     <select id="setAutoFetch"><option value="1">オン</option><option value="0">オフ</option></select>
+    <label class="fl">起動時、復習期限があれば復習タブを開く</label>
+    <select id="setOpenReview"><option value="1">オン</option><option value="0">オフ</option></select>
+  </div>
+
+  <h2>クラウド同期（Mac 2台・iPhoneでカードを共有）</h2>
+  <div class="card">
+    <div class="small muted">English for Canada アプリと同じ方式です。<b>全端末で同じURLと同期コード</b>を入れると、単語帳と学習記録が自動で揃います（このアプリ専用の場所に保存されます）。</div>
+    <label class="fl">Firebase Database URL</label>
+    <input type="text" id="setSyncUrl" placeholder="https://〇〇-default-rtdb.firebaseio.com" autocapitalize="off">
+    <label class="fl">同期コード（全端末で同じ文字列）</label>
+    <input type="text" id="setSyncCode" placeholder="例: nobu-vocab-2026" autocapitalize="off">
+    <div class="row" style="margin-top:10px">
+      <button class="btn grow" id="btnSaveSync">保存して同期を有効化</button>
+      <button class="btn sub" id="btnSyncNow">今すぐ同期</button>
+    </div>
+    <div class="small muted" id="syncStatus" style="margin-top:8px"></div>
   </div>
 
   <h2>Macのどこからでも追加（アプリを開かずに）</h2>
@@ -396,7 +414,7 @@ code.bm{display:block; background:var(--bg); border:1px solid var(--border); bor
 /* =====================================================================
    ハイライト英単語帳  v1.0.0
    ===================================================================== */
-const VERSION='1.2.0';
+const VERSION='1.3.0';
 const $=s=>document.querySelector(s), $$=s=>Array.from(document.querySelectorAll(s));
 const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,7);
@@ -408,16 +426,20 @@ function toast(msg){ const t=$('#toast'); t.textContent=msg; t.style.display='bl
 function shuffle(a){ for(let i=a.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]]; } return a; }
 
 /* ---------------- ストレージ ---------------- */
-const LS={cards:'hlv.cards.v1', settings:'hlv.settings.v1', stats:'hlv.stats.v1', doc:'hlv.doc.v1'};
+const LS={cards:'hlv.cards.v1', settings:'hlv.settings.v1', stats:'hlv.stats.v1', doc:'hlv.doc.v1', tombs:'hlv.tombs.v1'};
 function lsGet(k,fb){ try{ const v=localStorage.getItem(k); return v?JSON.parse(v):fb; }catch(e){ return fb; } }
 function lsSet(k,v){ try{ localStorage.setItem(k,JSON.stringify(v)); return true; }catch(e){ return false; } }
 
 let cards=lsGet(LS.cards,[]);
-let settings=Object.assign({newPerDay:10, theme:'auto', autoSpeak:false, autoFetch:true}, lsGet(LS.settings,{}));
+let settings=Object.assign({newPerDay:10, theme:'auto', autoSpeak:false, autoFetch:true,
+                            openReview:true, syncUrl:'', syncCode:'', lastSync:0}, lsGet(LS.settings,{}));
 let stats=lsGet(LS.stats,{byDay:{}});
-function saveCards(){ lsSet(LS.cards,cards); refreshBadge(); }
+let tombs=lsGet(LS.tombs,{});   // 削除の墓標 {cardId: 削除時刻ms} — 同期で復活しないように
+function saveCards(){ lsSet(LS.cards,cards); refreshBadge(); scheduleSync(); }
 function saveSettings(){ lsSet(LS.settings,settings); }
-function saveStats(){ lsSet(LS.stats,stats); }
+function saveStats(){ lsSet(LS.stats,stats); scheduleSync(); }
+function saveTombs(){ lsSet(LS.tombs,tombs); }
+function touchCard(c){ c.updatedAt=Date.now(); }
 function dayStat(d){ d=d||todayStr(); if(!stats.byDay[d]) stats.byDay[d]={added:0,reviewed:0,correct:0,intro:0}; return stats.byDay[d]; }
 
 /* ---------------- テーマ ---------------- */
@@ -560,6 +582,7 @@ function addCard(o){
     id:uid(), word:o.word.trim(), key:(o.key||o.word).toLowerCase().trim(),
     gloss:o.gloss||'', usage:o.usage||'', phonetic:o.phonetic||'',
     examples:o.examples||[], source:o.source||'', createdAt:new Date().toISOString(),
+    updatedAt:Date.now(),
     f:newSrs(), r:newSrs()
   };
   card.f.due=todayStr();          // 英→和は今日から新規として出題可能
@@ -621,7 +644,18 @@ async function enrichCard(card){
       }
     }catch(e){}
   }
-  if(changed){ saveCards(); if(currentTab==='deck') renderDeck(); }
+  // 例文の和訳を自動取得（MyMemory・無料。品質はほどほどなので編集可能のまま）
+  try{
+    const targets=card.examples.filter(ex=>ex.en&&!ex.ja).slice(0,2);
+    for(const ex of targets){
+      const r=await fetch('https://api.mymemory.translated.net/get?q='+encodeURIComponent(ex.en.slice(0,300))+'&langpair=en|ja');
+      if(!r.ok) continue;
+      const j=await r.json();
+      const t=(j&&j.responseData&&j.responseData.translatedText)||'';
+      if(t&&!/MYMEMORY WARNING/i.test(t)&&t!==ex.en){ ex.ja=t; changed=true; }
+    }
+  }catch(e){}
+  if(changed){ touchCard(card); saveCards(); if(currentTab==='deck') renderDeck(); }
   return changed;
 }
 
@@ -642,6 +676,9 @@ function refreshBadge(){
   const {due,newAvail}=dueCounts();
   const n=due+newAvail; const el=$('#dueBadge');
   el.style.display=n>0?'block':'none'; el.textContent=n>99?'99+':n;
+  try{ // ホーム画面アプリのアイコンバッジ（対応端末のみ: iOS 16.4+のPWA等）
+    if('setAppBadge' in navigator){ n>0?navigator.setAppBadge(n):navigator.clearAppBadge(); }
+  }catch(e){}
 }
 
 /* =====================================================================
@@ -1023,11 +1060,13 @@ function openCardSheet(id){
   $('#cSave').addEventListener('click',()=>{
     c.gloss=$('#cGloss').value.trim(); c.usage=$('#cUsage').value.trim();
     c.examples=c.examples.filter(ex=>ex.en.trim());
+    touchCard(c);
     saveCards(); closeSheet(); toast('保存しました');
     if(currentTab==='deck') renderDeck(); markKnownWords();
   });
   $('#cDel').addEventListener('click',()=>{
     if(!confirm('「'+c.word+'」を削除しますか？')) return;
+    tombs[id]=Date.now(); saveTombs();
     cards=cards.filter(x=>x.id!==id); saveCards(); closeSheet(); toast('削除しました');
     if(currentTab==='deck') renderDeck(); markKnownWords(); renderRevHome._dirty=true;
   });
@@ -1075,13 +1114,28 @@ function nextDue(c){
 function renderDeck(){
   const q=$('#deckSearch').value.trim().toLowerCase();
   let list=cards.slice();
-  if(deckFilter!=='all') list=list.filter(c=>cardStatus(c)===deckFilter);
+  if(deckFilter==='hard') list=list.filter(c=>(c.f.lapses+c.r.lapses)>=2);
+  else if(deckFilter!=='all') list=list.filter(c=>cardStatus(c)===deckFilter);
   if(q) list=list.filter(c=>c.word.toLowerCase().includes(q)||c.gloss.toLowerCase().includes(q));
   const sort=$('#deckSort').value;
   if(sort==='abc') list.sort((a,b)=>a.word.localeCompare(b.word));
   else if(sort==='due') list.sort((a,b)=>nextDue(a)<nextDue(b)?-1:1);
+  // 検索語が英語なら「ミニ辞書」として意味を表示（単語帳に無くても引ける）
+  let dictHtml='';
+  if(q&&/^[a-z][a-z'’ -]*$/.test(q)){
+    const lk=/\s/.test(q)?lookupPhrase(q):lookupWord(q);
+    const rel=(!lk&&!/\s/.test(q))?relatedLookup(q):null;
+    const hit=lk||rel;
+    if(hit&&!findCardByKey(hit.key)&&!list.some(c=>c.key===hit.key)){
+      dictHtml=`<div class="card" style="border-style:dashed">
+        <div class="row"><b>${esc(hit.key)}</b><span class="small muted">内蔵辞書${rel?'（関連語）':''}</span>
+          <button class="btn small" id="dictAdd" style="margin-left:auto">＋ 追加</button></div>
+        <div class="small" style="margin-top:4px">${esc(glossShort(hit.gloss,120))}</div>
+      </div>`;
+    }
+  }
   $('#deckEmpty').style.display=(cards.length===0)?'block':'none';
-  $('#deckList').innerHTML=list.map(c=>{
+  $('#deckList').innerHTML=dictHtml+list.map(c=>{
     const st=STATUS_LABEL[cardStatus(c)];
     const due=[c.f,c.r].filter(s=>s.due&&s.reps>0).map(s=>s.due).sort()[0];
     return `<div class="wordrow" data-id="${c.id}">
@@ -1099,6 +1153,8 @@ function renderDeck(){
   $('#deckList').querySelectorAll('.wordrow').forEach(r=>{
     r.addEventListener('click',()=>openCardSheet(r.dataset.id));
   });
+  const da=$('#dictAdd');
+  if(da) da.addEventListener('click',()=>{ openAddSheet(q,''); $('#deckSearch').value=''; });
 }
 
 /* =====================================================================
@@ -1143,6 +1199,10 @@ function renderRevHome(){
   $('#stDue').textContent=due;
   $('#stNew').textContent=newAvail+(newTotal>newAvail?' / '+newTotal:'');
   $('#stStreak').textContent=calcStreak();
+  const ts=dayStat();
+  $('#todayLine').textContent=ts.reviewed
+    ?('今日の実績: 復習 '+ts.reviewed+'枚（正答率 '+Math.round(100*ts.correct/ts.reviewed)+'%）・追加 '+(ts.added||0)+'語')
+    :(ts.added?('今日の実績: 追加 '+ts.added+'語（復習はこれから）'):'');
   $('#lblNewPerDay').textContent=settings.newPerDay;
   $('#btnStartReview').disabled=(due+newAvail)===0;
   $('#btnStartReview').textContent=(due+newAvail)===0?'✔ 今日の復習は完了です':'▶ 復習をはじめる（'+(due+newAvail)+'枚）';
@@ -1224,7 +1284,9 @@ function showRevAnswer(item,c){
   $('#rvSpk2').addEventListener('click',()=>speak(c.word));
   $$('#revStage .ex[data-say]').forEach(el=>el.addEventListener('click',()=>speak(el.dataset.say)));
   if(settings.autoSpeak) speak(c.word);
-  $('#revKbd').textContent='1: もう一度 ／ 2: 難しい ／ 3: 普通 ／ 4: 簡単';
+  $('#revKbd').textContent=window.matchMedia('(hover: none)').matches
+    ?'スワイプでも採点: ← もう一度 ／ 普通 →'
+    :'1: もう一度 ／ 2: 難しい ／ 3: 普通 ／ 4: 簡単';
 }
 function gradeCard(item,c,q){
   const s=item.dir==='f'?c.f:c.r;
@@ -1233,6 +1295,7 @@ function gradeCard(item,c,q){
   if(item.dir==='f'&&q>=3&&c.r.due===null){ c.r.due=addDays(todayStr(),1); } // 和→英を解放
   if(item.isNew&&first){ dayStat().intro=(dayStat().intro||0)+1; }
   const st=dayStat(); st.reviewed++; if(q>=3) st.correct++;
+  touchCard(c);
   saveStats(); saveCards();
   rev.done++;
   if(q<3){ rev.queue.push({id:item.id,dir:item.dir}); rev.total++; }
@@ -1260,6 +1323,24 @@ document.addEventListener('keydown',e=>{
     const b=$('#revStage .grade4 [data-q="'+map[e.key]+'"]'); if(b) b.click();
   }
 });
+// スワイプ採点（スマホ）: 答え表示中に 右スワイプ=普通 / 左スワイプ=もう一度
+(function(){
+  const stage=$('#revStage');
+  let sx=0, sy=0, tracking=false;
+  stage.addEventListener('touchstart',e=>{
+    if(!stage.querySelector('.grade4')) return;
+    const t=e.touches[0]; sx=t.clientX; sy=t.clientY; tracking=true;
+  },{passive:true});
+  stage.addEventListener('touchend',e=>{
+    if(!tracking) return; tracking=false;
+    const t=e.changedTouches[0];
+    const dx=t.clientX-sx, dy=t.clientY-sy;
+    if(Math.abs(dx)>70&&Math.abs(dx)>2*Math.abs(dy)){
+      const b=stage.querySelector('.grade4 [data-q="'+(dx>0?4:0)+'"]');
+      if(b) b.click();
+    }
+  },{passive:true});
+})();
 
 /* ---------------- 4択クイックテスト ---------------- */
 function startQuiz(mode){
@@ -1409,11 +1490,21 @@ function renderStatsPanel(){
 /* =====================================================================
    設定
    ===================================================================== */
+function renderSyncStatus(){
+  const el=$('#syncStatus'); if(!el) return;
+  el.textContent=syncEndpoint()
+    ?('同期: 有効 ✔ 最終同期 '+(settings.lastSync?new Date(settings.lastSync).toLocaleString():'まだ'))
+    :'同期: 未設定（English for Canada と同じ URL・お好きなコードでOK）';
+}
 function renderSettings(){
   $('#setNewPerDay').value=settings.newPerDay;
   $('#setTheme').value=settings.theme;
   $('#setAutoSpeak').value=settings.autoSpeak?'1':'0';
   $('#setAutoFetch').value=settings.autoFetch?'1':'0';
+  $('#setOpenReview').value=settings.openReview?'1':'0';
+  $('#setSyncUrl').value=settings.syncUrl||'';
+  $('#setSyncCode').value=settings.syncCode||'';
+  renderSyncStatus();
   $('#verLabel').textContent='v'+VERSION;
   const base=location.origin+location.pathname.replace(/index\.html$/,'');
   $('#bmCode').textContent=`javascript:(function(){var s=String(getSelection()).trim();if(!s){alert('英単語を選択してから押してください');return;}location.href='${base}?add='+encodeURIComponent(s);})()`;
@@ -1426,6 +1517,15 @@ $('#setNewPerDay').addEventListener('change',e=>{ settings.newPerDay=Math.max(0,
 $('#setTheme').addEventListener('change',e=>{ settings.theme=e.target.value; saveSettings(); applyTheme(); });
 $('#setAutoSpeak').addEventListener('change',e=>{ settings.autoSpeak=e.target.value==='1'; saveSettings(); });
 $('#setAutoFetch').addEventListener('change',e=>{ settings.autoFetch=e.target.value==='1'; saveSettings(); });
+$('#setOpenReview').addEventListener('change',e=>{ settings.openReview=e.target.value==='1'; saveSettings(); });
+$('#btnSaveSync').addEventListener('click',()=>{
+  settings.syncUrl=$('#setSyncUrl').value.trim();
+  settings.syncCode=$('#setSyncCode').value.trim();
+  saveSettings(); renderSyncStatus();
+  if(syncEndpoint()){ toast('同期を有効化しました'); cloudSync(false); }
+  else toast('URLと同期コードを入力してください');
+});
+$('#btnSyncNow').addEventListener('click',()=>cloudSync(false));
 $('#btnCopyBm').addEventListener('click',async()=>{
   try{ await navigator.clipboard.writeText($('#bmCode').textContent); toast('コピーしました'); }
   catch(e){ toast('コピーできませんでした。長押しで選択してください'); }
@@ -1465,9 +1565,68 @@ $('#btnAnki').addEventListener('click',()=>{
 });
 $('#btnWipe').addEventListener('click',()=>{
   if(!confirm('すべてのカード（'+cards.length+'枚）を削除します。よろしいですか？')) return;
-  if(!confirm('本当に削除しますか？この操作は元に戻せません')) return;
+  if(!confirm('本当に削除しますか？この操作は元に戻せません（同期先からも消えます）')) return;
+  const now=Date.now(); for(const c of cards) tombs[c.id]=now; saveTombs();
   cards=[]; saveCards(); renderDeck(); renderSettings(); toast('削除しました'); markKnownWords();
 });
+
+/* =====================================================================
+   クラウド同期（Firebase Realtime DB REST — english-canada-app と同方式）
+   全端末で同じ「Database URL」と「同期コード」を入れるだけ。
+   マージ: カードは updatedAt が新しい方が勝ち、削除は墓標(tombs)で伝搬。
+   ===================================================================== */
+function syncEndpoint(){
+  if(!settings.syncUrl||!settings.syncCode) return null;
+  return settings.syncUrl.replace(/\/+$/,'')+'/hlvocab/'+encodeURIComponent(settings.syncCode)+'.json';
+}
+let __syncing=false, __syncTimer=null;
+function scheduleSync(){ if(!syncEndpoint())return; clearTimeout(__syncTimer); __syncTimer=setTimeout(()=>cloudSync(true),3500); }
+function mergeTombs(a,b){ const out=Object.assign({},a); for(const k in (b||{})){ if(!out[k]||b[k]>out[k]) out[k]=b[k]; }
+  const cutoff=Date.now()-90*864e5; for(const k in out){ if(out[k]<cutoff) delete out[k]; } return out; }
+function mergeCards(local,remote,tb){
+  const map=new Map();
+  for(const c of (remote||[])){ if(c&&c.id) map.set(c.id,c); }
+  for(const c of local){ const r=map.get(c.id); if(!r||(c.updatedAt||0)>=(r.updatedAt||0)) map.set(c.id,c); }
+  let merged=[...map.values()].filter(c=>!(tb[c.id]&&tb[c.id]>(c.updatedAt||0)));
+  const byKey=new Map();
+  for(const c of merged){ const k=(c.key||c.word||'').toLowerCase(); const e=byKey.get(k);
+    if(!e||(c.updatedAt||0)>(e.updatedAt||0)) byKey.set(k,c); }
+  return [...byKey.values()].sort((a,b)=>(b.createdAt||'')<(a.createdAt||'')?-1:1);
+}
+function mergeStats(a,b){
+  const out={byDay:Object.assign({},a.byDay)};
+  for(const d in ((b&&b.byDay)||{})){
+    const x=out.byDay[d], y=b.byDay[d];
+    out.byDay[d]=x?{added:Math.max(x.added||0,y.added||0), reviewed:Math.max(x.reviewed||0,y.reviewed||0),
+                    correct:Math.max(x.correct||0,y.correct||0), intro:Math.max(x.intro||0,y.intro||0)}:y;
+  }
+  return out;
+}
+async function cloudSync(silent){
+  const url=syncEndpoint();
+  if(!url){ if(!silent) toast('同期が未設定です（設定タブでURLとコードを入力）'); return; }
+  if(__syncing) return; __syncing=true;
+  try{
+    const res=await fetch(url,{cache:'no-store'});
+    if(!res.ok) throw new Error('HTTP '+res.status);
+    const remote=await res.json();
+    if(remote&&typeof remote==='object'){
+      tombs=mergeTombs(tombs,remote.tombs); saveTombs();
+      const before=cards.length;
+      cards=mergeCards(cards,remote.cards||[],tombs);
+      stats=mergeStats(stats,remote.stats||{byDay:{}});
+      lsSet(LS.cards,cards); lsSet(LS.stats,stats);
+      if(cards.length!==before){ markKnownWords(); if(currentTab==='deck') renderDeck(); if(currentTab==='review') renderRevHome(); }
+    }
+    const put=await fetch(url,{method:'PUT',body:JSON.stringify({cards:cards,stats:stats,tombs:tombs,updatedAt:Date.now()})});
+    if(!put.ok) throw new Error('HTTP '+put.status);
+    settings.lastSync=Date.now(); saveSettings(); refreshBadge();
+    if(currentTab==='settings') renderSyncStatus();
+    if(!silent) toast('✅ 同期しました（'+cards.length+'枚）');
+  }catch(e){ if(!silent) toast('同期失敗: '+e.message); }
+  finally{ __syncing=false; }
+}
+window.addEventListener('focus',()=>{ if(syncEndpoint()) cloudSync(true); });
 
 /* =====================================================================
    Mac受信箱の自動取り込み（常駐サーバ /api/inbox・localhost配信時のみ有効）
@@ -1522,18 +1681,25 @@ applyTheme();
 renderReader();
 refreshBadge();
 // URL ?add=word （ブックマークレット経由）
+let __hadAddParam=false;
 (function(){
   const p=new URLSearchParams(location.search);
   const w=p.get('add');
   if(w){
+    __hadAddParam=true;
     history.replaceState(null,'',location.pathname);
     setTimeout(()=>openAddSheet(w.slice(0,80),''),300);
   }
 })();
-// 辞書ロード後に既知マークを更新
+// 起動時: 復習期限があれば復習タブへ（?add= で開いたときは除く）
+if(settings.openReview&&!__hadAddParam){
+  const dc=dueCounts();
+  if(dc.due+dc.newAvail>0) switchTab('review');
+}
+// 辞書ロード後に既知マークを更新＋受信箱＋クラウド同期
 window.addEventListener('load',()=>{
   const idle=window.requestIdleCallback||function(f){setTimeout(f,400);};
-  idle(()=>{ ensureDict(); markKnownWords(); pullInbox(); });
+  idle(()=>{ ensureDict(); markKnownWords(); pullInbox(); if(syncEndpoint()) cloudSync(true); });
 });
 // Service Worker
 if('serviceWorker' in navigator && location.protocol.startsWith('http')){
