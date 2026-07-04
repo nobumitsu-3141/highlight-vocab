@@ -367,10 +367,17 @@ code.bm{display:block; background:var(--bg); border:1px solid var(--border); bor
     初回のみ、アプリのフォルダにある <b>「セットアップ.command」をダブルクリック</b>。
     （アプリを更新したときも再実行してください）
     <div style="margin-top:8px">
-      <b>① いちばん速い: ダブルコピー（⌘C を素早く2回）</b><br>
+      <b>⓪ 最速: 選択して1秒待つだけ（単語帳セレクタ）</b><br>
+      どのアプリでも英単語を<b>ダブルクリックで選択してそのまま約1秒</b>置くと自動で追加され、通知に訳が出ます。
+      初回のみ: システム設定 → プライバシーとセキュリティ → <b>アクセシビリティ</b> →
+      「＋」→ アプリケーションフォルダの<b>「単語帳セレクタ」</b>を追加してオン。
+      入力欄での選択や長い文には反応しません。
+    </div>
+    <div style="margin-top:8px">
+      <b>① ダブルコピー（⌘C を素早く2回）</b><br>
       どのアプリでも（Chrome・プレビューのPDF・メール…）英単語を選択して
       <b>⌘C ⌘C</b> と2回コピーするだけ。即座に追加され、<b>通知に訳が表示</b>されます。
-      メニュー操作は一切ありません。
+      英文の段落を<b>1回コピー</b>すると、難単語だけが自動で「候補」に入ります。
     </div>
     <div style="margin-top:8px">
       <b>② ショートカット ⌘⇧E / 右クリック→サービス</b><br>
@@ -450,7 +457,7 @@ code.bm{display:block; background:var(--bg); border:1px solid var(--border); bor
 /* =====================================================================
    ハイライト英単語帳  v1.0.0
    ===================================================================== */
-const VERSION='1.5.0';
+const VERSION='1.5.1';
 const $=s=>document.querySelector(s), $$=s=>Array.from(document.querySelectorAll(s));
 const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,7);

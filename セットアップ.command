@@ -37,6 +37,14 @@ fi
 # --- 3. Mac アプリ（/Applications + Dock）---
 bash macos/make_app.sh
 
+# --- 3a. 選択監視「単語帳セレクタ」（選択して1秒で自動追加） ---
+rm -rf "/Applications/単語帳セレクタ.app"
+osacompile -l JavaScript -o "/Applications/単語帳セレクタ.app" macos/selwatch.js
+plutil -replace LSUIElement -bool true "/Applications/単語帳セレクタ.app/Contents/Info.plist" 2>/dev/null
+echo "✔ 選択監視「単語帳セレクタ」を作成しました"
+echo "  ※初回のみ: システム設定 → プライバシーとセキュリティ → アクセシビリティ →"
+echo "    「＋」で /Applications/単語帳セレクタ.app を追加してオンにしてください"
+
 # --- 3b. Chrome拡張をデスクトップから見つけやすく ---
 ln -sfn "$SRC/chrome-extension" ~/Desktop/単語帳Chrome拡張
 echo "✔ デスクトップに「単語帳Chrome拡張」リンクを作成しました"

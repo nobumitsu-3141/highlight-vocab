@@ -166,6 +166,18 @@
   document.addEventListener('keyup', (e) => {
     if (e.key === 'Alt') { tip.style.display = 'none'; hoverWord = ''; }
   });
+  // ⌥(Option)+ダブルクリック = 選択と同時に即追加
+  let lastDblAdd = 0;
+  document.addEventListener('dblclick', (e) => {
+    if (!e.altKey) return;
+    const t = String(window.getSelection()).replace(/\s+/g, ' ').trim();
+    if (!t || t.length > 40 || !/^[A-Za-z][A-Za-z'’ \-]*$/.test(t)) return;
+    if (Date.now() - lastDblAdd < 1500) return;
+    lastDblAdd = Date.now();
+    const selNode = window.getSelection().anchorNode;
+    sendAdd(t, selNode ? sentenceAround(selNode, t) : '');
+    try { window.getSelection().removeAllRanges(); } catch (err) {}
+  });
   document.addEventListener('click', (e) => {
     if (e.altKey && hoverWord && tip.style.display !== 'none') {
       e.preventDefault(); e.stopPropagation();

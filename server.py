@@ -364,10 +364,30 @@ def spawn_clipwatch():
     threading.Thread(target=babysit, daemon=True).start()
 
 
+def spawn_selwatch():
+    """選択監視（単語帳セレクタ.app）を常駐させる（本番ポート8331のときだけ）"""
+    binpath = '/Applications/単語帳セレクタ.app/Contents/MacOS/applet'
+    if PORT != 8331 or os.environ.get('HLVOCAB_SEL', '1') == '0' or not os.path.isfile(binpath):
+        return
+    import subprocess
+    subprocess.run(['pkill', '-f', '単語帳セレクタ.app/Contents/MacOS/applet'], capture_output=True)
+
+    def babysit():
+        while True:
+            try:
+                p = subprocess.Popen([binpath], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                p.wait()
+            except Exception:
+                pass
+            time.sleep(3)
+    threading.Thread(target=babysit, daemon=True).start()
+
+
 def main():
     srv = ThreadingHTTPServer(('127.0.0.1', PORT), Handler)
     threading.Thread(target=load_dict, daemon=True).start()  # 辞書は裏で先読み
     spawn_clipwatch()
+    spawn_selwatch()
     srv.serve_forever()
 
 
