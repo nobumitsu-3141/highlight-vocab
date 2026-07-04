@@ -48,6 +48,14 @@ function selectedText() {
   } catch (e) { return null; }
 }
 
+let __snd = null;   // 再生中の解放を防ぐ
+function ding(name) {  // 追加されたことが音でわかるように（通知が出ない環境でも確実）
+  try {
+    const s = $.NSSound.alloc.initWithContentsOfFileByReference('/System/Library/Sounds/' + name + '.aiff', true);
+    if (!s.isNil()) { __snd = s; s.play; }
+  } catch (e) {}
+}
+
 function addWord(t, src) {
   let res = '';
   try {
@@ -56,7 +64,8 @@ function addWord(t, src) {
       ' --data-urlencode "source=選択(' + src.replace(/["\\$`]/g, '') + ')"' +
       ' --data-urlencode "w=' + t + '"'
     );
-  } catch (e) { return; }
+  } catch (e) { ding('Basso'); return; }
+  ding('Glass');
   const tab = res.indexOf('\t');
   const word = tab > 0 ? res.slice(0, tab) : t;
   const gloss = tab > 0 ? res.slice(tab + 1) : '';

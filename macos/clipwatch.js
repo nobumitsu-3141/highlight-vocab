@@ -6,6 +6,8 @@
 ObjC.import('AppKit');
 ObjC.import('Foundation');
 
+let __snd = null;   // 再生中の解放を防ぐ
+
 const app = Application.currentApplication();
 app.includeStandardAdditions = true;
 
@@ -44,9 +46,17 @@ function harvestText(t) {
     );
     const parts = res.split('\t');   // CAND \t 数 \t 単語一覧
     if (parts[0] === 'CAND' && +parts[1] > 0) {
+      ding('Submarine');
       app.displayNotification((parts[2] || '').slice(0, 120),
         { withTitle: '難単語を' + parts[1] + '語 候補に追加（アプリで確認）' });
     }
+  } catch (e) {}
+}
+
+function ding(name) {  // 追加されたことが音でわかるように（通知が出ない環境でも確実）
+  try {
+    const s = $.NSSound.alloc.initWithContentsOfFileByReference('/System/Library/Sounds/' + name + '.aiff', true);
+    if (!s.isNil()) { __snd = s; s.play; }
   } catch (e) {}
 }
 
@@ -60,9 +70,11 @@ function addWord(t) {
       ' --data-urlencode "w=' + t + '"'
     );
   } catch (e) {
+    ding('Basso');
     try { app.displayNotification('常駐サーバが見つかりません。セットアップ.commandを実行してください。', { withTitle: 'ハイライト英単語帳' }); } catch (e2) {}
     return;
   }
+  ding('Glass');
   const tab = res.indexOf('\t');
   const word = tab > 0 ? res.slice(0, tab) : t;
   const gloss = tab > 0 ? res.slice(tab + 1) : '';

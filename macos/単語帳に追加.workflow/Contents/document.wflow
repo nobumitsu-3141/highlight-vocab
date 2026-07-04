@@ -64,9 +64,11 @@ w=$(cat | /usr/bin/tr '\n\t' '  ' | /usr/bin/sed -e 's/  */ /g' -e 's/^ *//' -e 
 if [ -z "$w" ]; then exit 0; fi
 res=$(/usr/bin/curl -sG --max-time 3 "http://localhost:8331/api/add" --data-urlencode "w=$w" --data-urlencode "source=Mac選択テキスト" --data-urlencode "fmt=txt" 2>/dev/null)
 if [ -z "$res" ]; then
+  /usr/bin/afplay /System/Library/Sounds/Basso.aiff 2>/dev/null
   /usr/bin/osascript -e 'display notification "常駐サーバが見つかりません。highlight-vocab の セットアップ.command を実行してください。" with title "ハイライト英単語帳"'
   exit 0
 fi
+/usr/bin/afplay /System/Library/Sounds/Glass.aiff 2>/dev/null
 word=$(printf '%s' "$res" | /usr/bin/cut -f1 | /usr/bin/tr -d '"\\')
 gloss=$(printf '%s' "$res" | /usr/bin/cut -f2- | /usr/bin/tr -d '"\\' | /usr/bin/cut -c1-150)
 /usr/bin/osascript -e "display notification \"$gloss\" with title \"単語帳に追加: $word\""</string>
