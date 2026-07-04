@@ -1,5 +1,7 @@
 // ハイライト英単語帳 — 選択監視デーモン「単語帳セレクタ」
-// どのアプリでも「英単語を選択したまま約1秒」で自動的に単語帳へ追加する。
+// どのアプリでも:
+//   ・⌥(Option)+ダブルクリック選択 → 即・単語帳へ（待ち時間なし）
+//   ・普通に選択して約1秒そのまま → 自動で単語帳へ
 // ガード: 英単語/短フレーズのみ・入力欄(テキストフィールド等)は無視・
 //         同じ選択は再追加しない・2.5秒クールダウン。
 // セットアップ.command が osacompile で /Applications/単語帳セレクタ.app にビルドし、
@@ -8,6 +10,12 @@
 //   「単語帳セレクタ」をオンにする必要がある。
 'use strict';
 ObjC.import('Foundation');
+ObjC.import('AppKit');
+
+const OPTION_FLAG = 1 << 19;   // NSEventModifierFlagOption
+function optionHeld() {
+  try { return (Number($.NSEvent.modifierFlags) & OPTION_FLAG) !== 0; } catch (e) { return false; }
+}
 
 const app = Application.currentApplication();
 app.includeStandardAdditions = true;
@@ -56,21 +64,24 @@ function addWord(t, src) {
 }
 
 function run() {
-  let prev = '', lastAdded = '', cool = 0, emptySince = 0;
+  let prev = '', same = 0, lastAdded = '', cool = 0, emptySince = 0;
   while (true) {
-    delay(0.6);
+    delay(0.3);
+    const opt = optionHeld();
     const sel = selectedText();
     const t = sel ? sel.text.replace(/\s+/g, ' ').trim() : '';
     const now = Date.now();
     if (!t) {
       if (!emptySince) emptySince = now;
       if (lastAdded && now - emptySince > 6000) lastAdded = '';  // 選択が消えてしばらくしたら同語の再追加を許可
-      prev = '';
+      prev = ''; same = 0;
       continue;
     }
     emptySince = 0;
-    // 同じ選択が2ティック連続(≒1.2秒保持) → 追加
-    if (t === prev && t !== lastAdded && now >= cool && isTerm(t)) {
+    same = (t === prev) ? same + 1 : 0;
+    // ⌥を押しながらの選択 → 即追加 ／ 通常は約1.2秒(4ティック)保持で追加
+    const ready = opt ? true : (same >= 4);
+    if (ready && t !== lastAdded && now >= cool && isTerm(t)) {
       lastAdded = t;
       cool = now + 2500;
       addWord(t, sel.app);

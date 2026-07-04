@@ -1,7 +1,7 @@
 /* ハイライト英単語帳 — service worker
    大きな固定ファイル(dict.js / pdf.js / icons)はキャッシュ優先、
    index.html などはネットワーク優先(オフライン時キャッシュ)。 */
-const CACHE = 'hlvocab-v9';
+const CACHE = 'hlvocab-v10';
 const ASSETS = [
   './',
   'index.html',
