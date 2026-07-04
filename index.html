@@ -414,7 +414,7 @@ code.bm{display:block; background:var(--bg); border:1px solid var(--border); bor
 /* =====================================================================
    ハイライト英単語帳  v1.0.0
    ===================================================================== */
-const VERSION='1.3.0';
+const VERSION='1.3.1';
 const $=s=>document.querySelector(s), $$=s=>Array.from(document.querySelectorAll(s));
 const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,7);
@@ -1577,7 +1577,8 @@ $('#btnWipe').addEventListener('click',()=>{
    ===================================================================== */
 function syncEndpoint(){
   if(!settings.syncUrl||!settings.syncCode) return null;
-  return settings.syncUrl.replace(/\/+$/,'')+'/hlvocab/'+encodeURIComponent(settings.syncCode)+'.json';
+  // 既存Firebaseのルール(engca/ 配下のみ許可)をそのまま使えるよう、engca/hlvocab-<code> に保存する
+  return settings.syncUrl.replace(/\/+$/,'')+'/engca/hlvocab-'+encodeURIComponent(settings.syncCode)+'.json';
 }
 let __syncing=false, __syncTimer=null;
 function scheduleSync(){ if(!syncEndpoint())return; clearTimeout(__syncTimer); __syncTimer=setTimeout(()=>cloudSync(true),3500); }
@@ -1684,6 +1685,14 @@ refreshBadge();
 let __hadAddParam=false;
 (function(){
   const p=new URLSearchParams(location.search);
+  // リンクを開くだけで同期設定が入る: ?syncUrl=...&syncCode=...
+  const su=p.get('syncUrl'), sc=p.get('syncCode');
+  if(su&&sc){
+    settings.syncUrl=su.trim(); settings.syncCode=sc.trim(); saveSettings();
+    history.replaceState(null,'',location.pathname);
+    setTimeout(()=>{ toast('クラウド同期を設定しました'); cloudSync(false); },600);
+    return;
+  }
   const w=p.get('add');
   if(w){
     __hadAddParam=true;
