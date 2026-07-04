@@ -7,6 +7,15 @@
   if (window.__hlvLoaded) return;
   window.__hlvLoaded = true;
 
+  // ページ丸ごと回収（backgroundからの要求に本文テキストを返す）
+  chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+    if (msg && msg.type === 'grabText') {
+      const root = document.querySelector('article, main, [role="main"]') || document.body;
+      sendResponse({ title: document.title || location.hostname,
+                     text: (root && root.innerText || '').slice(0, 20000) });
+    }
+  });
+
   const Z = 2147483000;
   /* ---------- UI部品 ---------- */
   const btn = document.createElement('button');

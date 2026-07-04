@@ -19,8 +19,35 @@ function clipText() {
 function isEnglishTerm(t) {
   if (!t || t.length < 2 || t.length > 80) return false;
   if (!/^[A-Za-z][A-Za-z'’ \-]*$/.test(t)) return false;      // 英字・空白・'・- のみ
-  if (t.split(' ').filter(Boolean).length > 6) return false;   // 長文コピーは無視
+  if (t.split(' ').filter(Boolean).length > 6) return false;   // 単語〜短フレーズのみ
   return true;
+}
+
+// まとまった英文か（1回コピーで難単語を自動回収する対象）
+function isEnglishText(t) {
+  if (!t || t.length < 120 || t.length > 20000) return false;
+  const letters = (t.match(/[A-Za-z]/g) || []).length;
+  const nonspace = (t.match(/\S/g) || []).length;
+  if (!nonspace || letters / nonspace < 0.7) return false;    // 日本語やコード混じりは除外
+  if ((t.match(/[A-Za-z][A-Za-z'’-]+/g) || []).length < 20) return false;
+  return true;
+}
+
+function harvestText(t) {
+  try {
+    const tmp = '/tmp/hlvocab-clip.txt';
+    ObjC.wrap(t).writeToFileAtomicallyEncodingError(tmp, true, $.NSUTF8StringEncoding, null);
+    const res = app.doShellScript(
+      '/usr/bin/curl -s --max-time 5 "http://localhost:8331/api/add?fmt=txt"' +
+      ' --data-urlencode "source=コピーした英文"' +
+      ' --data-urlencode "text@' + tmp + '"'
+    );
+    const parts = res.split('\t');   // CAND \t 数 \t 単語一覧
+    if (parts[0] === 'CAND' && +parts[1] > 0) {
+      app.displayNotification((parts[2] || '').slice(0, 120),
+        { withTitle: '難単語を' + parts[1] + '語 候補に追加（アプリで確認）' });
+    }
+  } catch (e) {}
 }
 
 function addWord(t) {
@@ -47,6 +74,7 @@ function run() {
   let last = pb.changeCount;
   let lastChangeAt = 0;
   let coolUntil = 0;
+  let lastTextSig = '';
   while (true) {
     delay(0.25);
     let c;
@@ -56,16 +84,24 @@ function run() {
     const now = Date.now();
     last = c;
     if (now < coolUntil) { lastChangeAt = now; continue; }
-    // 2連続コピー: 1ティック内に2回変化(delta>=2) or 前回変化から0.9秒以内
-    if (delta >= 2 || (now - lastChangeAt) < 900) {
+    const raw = clipText();
+    const t = raw.replace(/\s+/g, ' ').trim();
+    // ① 単語/短フレーズの2連続コピー → 即・単語帳へ
+    if ((delta >= 2 || (now - lastChangeAt) < 900) && isEnglishTerm(t)) {
       lastChangeAt = now;
-      const t = clipText().replace(/\s+/g, ' ').trim();
-      if (isEnglishTerm(t)) {
-        coolUntil = now + 1800;   // 連打の重複防止
-        addWord(t);
-      }
-    } else {
-      lastChangeAt = now;
+      coolUntil = now + 1800;
+      addWord(t);
+      continue;
     }
+    // ② まとまった英文の1回コピー → 難単語だけ候補として回収
+    if (isEnglishText(raw)) {
+      const sig = raw.length + ':' + raw.slice(0, 40) + raw.slice(-40);
+      if (sig !== lastTextSig) {
+        lastTextSig = sig;
+        coolUntil = now + 5000;
+        harvestText(raw);
+      }
+    }
+    lastChangeAt = now;
   }
 }

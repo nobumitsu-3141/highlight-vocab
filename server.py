@@ -49,6 +49,8 @@ IRREG = {
 }
 
 
+FREQ_RANK = {}
+
 def load_dict():
     global DICT
     if DICT is not None:
@@ -63,7 +65,9 @@ def load_dict():
                         t = ln.find('\t')
                         if t > 0:
                             DICT[ln[:t]] = ln[t + 1:]
-                    break
+                elif line.startswith('window.EN_FREQ='):
+                    for i, w in enumerate(json.loads(line[len('window.EN_FREQ='):].rstrip().rstrip(';'))):
+                        FREQ_RANK[w] = i
     except Exception:
         pass
     return DICT
@@ -155,6 +159,45 @@ def related_candidates(w):
     return [t for t in tries if t and len(t) > 2]
 
 
+FUNC_WORDS = set('''the a an and or but of to in on at for with by from as is are was were be been being it its
+he she they them his her their this that these those which who whom whose what has have had not no so if can could
+will would may might shall should do does did i my me you your we our us am than then there here when while about
+into over after before between during under above out up down off again once more most other some any all both each
+few such only own same too very just also now new one two three first last many much per via'''.split())
+
+
+def extract_candidates(text, min_rank=10000, max_words=8):
+    """英文テキストから「稀な単語」を文脈つきで抽出する（一括候補用）"""
+    d = load_dict()
+    text = text[:20000]
+    # 文に分割して、単語→出現文 を対応づける
+    sentences = re.split(r'(?<=[.!?])\s+', text.replace('\n', ' '))
+    found = {}
+    for sent in sentences:
+        for m in re.finditer(r"[A-Za-z][A-Za-z'’-]+", sent):
+            w = m.group(0).lower().replace('’', "'")
+            if len(w) < 3 or w in FUNC_WORDS:
+                continue
+            key = None
+            for c in lemma_candidates(w):
+                if c in d:
+                    key = c
+                    break
+            if not key or key in found or key in FUNC_WORDS or len(key) < 3:
+                continue
+            if FREQ_RANK.get(key, 10**9) < min_rank:
+                continue  # よく使う語はスキップ
+            ctx = sent.strip()
+            found[key] = {
+                'w': key, 'gloss': d[key],
+                'context': ctx if 20 <= len(ctx) <= 240 else '',
+                'cand': 1,
+            }
+    # 稀な順に上位だけ
+    ranked = sorted(found.values(), key=lambda x: -FREQ_RANK.get(x['w'], 10**9))
+    return ranked[:max_words]
+
+
 def lookup(word):
     """(見出し語, 訳) を返す。見つからなければ (None, '')"""
     d = load_dict()
@@ -227,24 +270,7 @@ class Handler(SimpleHTTPRequestHandler):
             return self._send(200, json.dumps({'ok': True, 'app': 'hlvocab', 'time': int(time.time())}))
 
         if parsed.path == '/api/add':
-            w = re.sub(r'\s+', ' ', q.get('w', '')).strip()[:80]
-            if not w or not re.search(r'[A-Za-z]', w):
-                return self._send(400, json.dumps({'ok': False, 'error': 'no word'}))
-            key, gloss = lookup(w)
-            item = {
-                'word': w, 'key': key or w.lower(), 'gloss': gloss,
-                'context': q.get('context', '')[:300], 'source': q.get('source', '')[:100],
-                'ts': int(time.time() * 1000),
-            }
-            with LOCK:
-                items = inbox_read()
-                if not any(x.get('key') == item['key'] for x in items):
-                    items.append(item)
-                    inbox_write(items)
-            if q.get('fmt') == 'txt':
-                g = gloss.replace('/', '、')[:80] if gloss else '(辞書に無い語。アプリで訳を入力)'
-                return self._send(200, (item['key'] + '\t' + g), 'text/plain; charset=utf-8')
-            return self._send(200, json.dumps({'ok': True, 'word': item['key'], 'gloss': gloss}, ensure_ascii=False))
+            return self._handle_add(q)
 
         if parsed.path == '/api/inbox':
             with LOCK:
@@ -259,6 +285,63 @@ class Handler(SimpleHTTPRequestHandler):
             return self._send(200, json.dumps({'ok': True, 'left': len(items)}))
 
         return self._send(404, json.dumps({'ok': False, 'error': 'unknown api'}))
+
+    def do_POST(self):
+        parsed = urllib.parse.urlparse(self.path)
+        if parsed.path != '/api/add':
+            return self._send(404, json.dumps({'ok': False, 'error': 'unknown api'}))
+        try:
+            length = int(self.headers.get('Content-Length') or 0)
+            body = self.rfile.read(min(length, 400000)).decode('utf-8', 'replace')
+            if 'json' in (self.headers.get('Content-Type') or ''):
+                data = json.loads(body)
+            else:
+                data = {k: v[0] for k, v in urllib.parse.parse_qs(body).items()}
+        except Exception:
+            data = {}
+        return self._handle_add(data)
+
+    def _handle_add(self, q):
+        # --- まとまった英文 → 難単語だけ候補として受信箱へ ---
+        text = (q.get('text') or '').strip()
+        if text:
+            cands = extract_candidates(text)
+            added = []
+            with LOCK:
+                items = inbox_read()
+                have = set(x.get('key') for x in items)
+                for c in cands:
+                    if c['w'] in have:
+                        continue
+                    items.append({'word': c['w'], 'key': c['w'], 'gloss': c['gloss'],
+                                  'context': c['context'], 'source': (q.get('source') or 'テキスト取り込み')[:100],
+                                  'cand': 1, 'ts': int(time.time() * 1000)})
+                    added.append(c['w'])
+                if added:
+                    inbox_write(items)
+            if q.get('fmt') == 'txt':
+                return self._send(200, 'CAND\t%d\t%s' % (len(added), ', '.join(added)), 'text/plain; charset=utf-8')
+            return self._send(200, json.dumps({'ok': True, 'cands': added}, ensure_ascii=False))
+
+        # --- 単語1つの即時追加（従来どおり） ---
+        w = re.sub(r'\s+', ' ', q.get('w', '')).strip()[:80]
+        if not w or not re.search(r'[A-Za-z]', w):
+            return self._send(400, json.dumps({'ok': False, 'error': 'no word'}))
+        key, gloss = lookup(w)
+        item = {
+            'word': w, 'key': key or w.lower(), 'gloss': gloss,
+            'context': (q.get('context') or '')[:300], 'source': (q.get('source') or '')[:100],
+            'ts': int(time.time() * 1000),
+        }
+        with LOCK:
+            items = inbox_read()
+            if not any(x.get('key') == item['key'] for x in items):
+                items.append(item)
+                inbox_write(items)
+        if q.get('fmt') == 'txt':
+            g = gloss.replace('/', '、')[:80] if gloss else '(辞書に無い語。アプリで訳を入力)'
+            return self._send(200, (item['key'] + '\t' + g), 'text/plain; charset=utf-8')
+        return self._send(200, json.dumps({'ok': True, 'word': item['key'], 'gloss': gloss}, ensure_ascii=False))
 
 
 def spawn_clipwatch():

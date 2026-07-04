@@ -10,12 +10,43 @@ chrome.runtime.onInstalled.addListener(() => {
     title: '「%s」を単語帳に追加',
     contexts: ['selection']
   });
+  chrome.contextMenus.create({
+    id: 'hlv-harvest',
+    title: 'このページの難単語を単語帳の候補へ',
+    contexts: ['page']
+  });
 });
 
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
-  if (info.menuItemId !== 'hlv-add' || !info.selectionText) return;
-  const r = await addWord(info.selectionText, (tab && tab.title) || 'Chrome', '');
-  notify(r);
+  if (info.menuItemId === 'hlv-add' && info.selectionText) {
+    const r = await addWord(info.selectionText, (tab && tab.title) || 'Chrome', '');
+    notify(r);
+    return;
+  }
+  if (info.menuItemId === 'hlv-harvest' && tab && tab.id != null) {
+    chrome.tabs.sendMessage(tab.id, { type: 'grabText' }, async (resp) => {
+      if (chrome.runtime.lastError || !resp || !resp.text) {
+        chrome.notifications.create({ type: 'basic', iconUrl: 'icons/icon128.png',
+          title: 'ハイライト英単語帳', message: 'このページからはテキストを取得できませんでした' });
+        return;
+      }
+      try {
+        const res = await fetch(API_BASE + '/api/add', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text: resp.text.slice(0, 20000), source: resp.title || 'Chromeページ' })
+        });
+        const j = res.ok ? await res.json() : null;
+        const n = j && j.cands ? j.cands.length : 0;
+        chrome.notifications.create({ type: 'basic', iconUrl: 'icons/icon128.png',
+          title: n ? ('難単語を' + n + '語 候補に追加') : 'ハイライト英単語帳',
+          message: n ? j.cands.join(', ').slice(0, 130) : '新しい難単語は見つかりませんでした' });
+      } catch (e) {
+        chrome.notifications.create({ type: 'basic', iconUrl: 'icons/icon128.png',
+          title: 'ハイライト英単語帳', message: '常駐サーバが見つかりません（セットアップ.commandを実行）' });
+      }
+    });
+  }
 });
 
 async function addWord(word, source, context) {

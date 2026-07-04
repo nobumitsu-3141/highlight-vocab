@@ -133,6 +133,8 @@ hr{border:none; border-top:1px solid var(--border); margin:12px 0;}
 .tag.new{background:#dbeafe; color:#1d4ed8;}
 .tag.learn{background:#fef3c7; color:#b45309;}
 .tag.master{background:#dcfce7; color:#15803d;}
+.tag.cand{background:#fef9c3; color:#a16207;}
+[data-theme="dark"] .tag.cand{background:#3f3a12; color:#fde047;}
 [data-theme="dark"] .tag.new{background:#1e3a5f; color:#93c5fd;}
 [data-theme="dark"] .tag.learn{background:#453107; color:#fcd34d;}
 [data-theme="dark"] .tag.master{background:#14351f; color:#86efac;}
@@ -241,6 +243,7 @@ code.bm{display:block; background:var(--bg); border:1px solid var(--border); bor
   </div>
   <div class="chips" id="deckChips">
     <button data-f="all" class="active">すべて</button>
+    <button data-f="cand">候補</button>
     <button data-f="new">新規</button>
     <button data-f="learn">学習中</button>
     <button data-f="hard">苦手</button>
@@ -266,6 +269,7 @@ code.bm{display:block; background:var(--bg); border:1px solid var(--border); bor
       <div class="card"><div class="num" id="stStreak">0</div><div class="lbl">連続日数</div></div>
     </div>
     <div class="small muted" id="todayLine" style="margin:0 2px 8px"></div>
+    <div id="candBanner"></div>
     <button class="btn" id="btnStartReview" style="width:100%; padding:14px; font-size:16px">▶ 復習をはじめる</button>
     <div class="small muted" style="margin:6px 2px">
       期限が来たカード＋新規カード（1日 <span id="lblNewPerDay"></span> 枚まで）を出題。
@@ -349,6 +353,13 @@ code.bm{display:block; background:var(--bg); border:1px solid var(--border); bor
     <code class="bm" id="inboxUrl">（設定タブでクラウド同期を有効にしてください）</code>
     <div class="row" style="margin-top:8px"><button class="btn small" id="btnCopyInbox">URLをコピー</button></div>
     <div class="muted" style="margin-top:6px">追加された単語は、次にどの端末でアプリを開いたときにも自動でカードになります。</div>
+    <hr>
+    <b>おまけ: ページ丸ごと版（単語を選択すらしない）</b><br>
+    もう1つショートカットを作り、共有シートの受け取りを「<b>URL・Safari Webページ</b>」にして、
+    アクションを「<b>Webページから記事を取得</b>（Safariリーダー）」→「URLの内容を取得（POST・上と同じURL）」
+    → 本文JSONのキーを <b>text</b>・値を「<b>記事の本文</b>」にします。<br>
+    以後、記事を読み終えたら 共有 → そのショートカット。<b>難しい単語だけが自動で「候補」に入り</b>、
+    アプリを開いたときにまとめて確認・追加できます。
   </div>
 
   <h2>Macのどこからでも追加（アプリを開かずに）</h2>
@@ -439,7 +450,7 @@ code.bm{display:block; background:var(--bg); border:1px solid var(--border); bor
 /* =====================================================================
    ハイライト英単語帳  v1.0.0
    ===================================================================== */
-const VERSION='1.4.0';
+const VERSION='1.5.0';
 const $=s=>document.querySelector(s), $$=s=>Array.from(document.querySelectorAll(s));
 const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,7);
@@ -605,7 +616,7 @@ function findCard(id){ return cards.find(c=>c.id===id); }
 function findCardByKey(key){ key=key.toLowerCase(); return cards.find(c=>c.key===key||c.word.toLowerCase()===key); }
 function knownKeySet(){
   const s=new Set();
-  for(const c of cards){ s.add(c.word.toLowerCase()); if(c.key) s.add(c.key); }
+  for(const c of cards){ if(c.pending) continue; s.add(c.word.toLowerCase()); if(c.key) s.add(c.key); }
   return s;
 }
 function addCard(o,quiet){
@@ -616,19 +627,27 @@ function addCard(o,quiet){
     updatedAt:Date.now(),
     f:newSrs(), r:newSrs()
   };
+  if(o.pending) card.pending=true;   // 候補（承認するまで復習に出さない）
   card.f.due=todayStr();          // 英→和は今日から新規として出題可能
   cards.unshift(card);
-  dayStat().added++; saveStats(); saveCards();
-  if(settings.autoFetch&&!quiet) enrichCard(card);   // 一括追加時はAPI連打を避ける
+  if(!card.pending){ dayStat().added++; saveStats(); }
+  saveCards();
+  if(settings.autoFetch&&!quiet&&!card.pending) enrichCard(card);   // 一括追加時はAPI連打を避ける
   return card;
+}
+function pendingCards(){ return cards.filter(c=>c.pending); }
+function approveCard(c){
+  delete c.pending; c.f.due=todayStr(); touchCard(c);
+  dayStat().added++; saveStats();
 }
 function seen(s){ return s.reps>0||s.lapses>0; }
 function cardStatus(c){
+  if(c.pending) return 'cand';
   if(!seen(c.f)&&!seen(c.r)) return 'new';
   if(c.f.iv>=21&&(!seen(c.r)||c.r.iv>=21)) return 'master';
   return 'learn';
 }
-const STATUS_LABEL={new:['新規','new'],learn:['学習中','learn'],master:['習得済み','master']};
+const STATUS_LABEL={new:['新規','new'],learn:['学習中','learn'],master:['習得済み','master'],cand:['候補','cand']};
 
 /* ---------------- オンライン自動取得 ---------------- */
 async function enrichCard(card){
@@ -1110,6 +1129,7 @@ function openCardSheet(id){
       英→和: ${srsLabel(c.f)} ／ 和→英: ${c.r.due?srsLabel(c.r):'英→和に合格すると解放'}
     </div>
     <div class="row" style="margin-top:12px">
+      ${c.pending?'<button class="btn grow" id="cApprove" style="background:var(--good)">✅ 候補から単語帳へ</button>':''}
       <button class="btn grow" id="cSave">保存</button>
       <button class="btn danger" id="cDel">削除</button>
     </div>
@@ -1138,6 +1158,12 @@ function openCardSheet(id){
     const ok=await enrichCard(c);
     toast(ok?'取得しました':'新しい情報は見つかりませんでした');
     openCardSheet(id);
+  });
+  const ap=$('#cApprove');
+  if(ap) ap.addEventListener('click',()=>{
+    approveCard(c); saveCards(); closeSheet(); toast('単語帳に追加しました');
+    markKnownWords(); refreshBadge();
+    if(currentTab==='deck') renderDeck(); if(currentTab==='review') renderRevHome();
   });
   $('#cSave').addEventListener('click',()=>{
     c.gloss=$('#cGloss').value.trim(); c.usage=$('#cUsage').value.trim();
@@ -1282,6 +1308,7 @@ function dueCounts(){
   const today=todayStr();
   let due=0,newCount=0;
   for(const c of cards){
+    if(c.pending) continue;   // 候補は承認まで出題しない
     if(seen(c.f)&&c.f.due&&c.f.due<=today) due++;
     if(c.r.due&&c.r.due<=today) due++;   // 和→英（解放済みの初回・lapse含む）
     if(!seen(c.f)) newCount++;
@@ -1293,6 +1320,7 @@ function buildQueue(){
   const today=todayStr();
   const dueItems=[], newItems=[];
   for(const c of cards){
+    if(c.pending) continue;
     if(seen(c.f)&&c.f.due&&c.f.due<=today) dueItems.push({id:c.id,dir:'f'});
     if(c.r.due&&c.r.due<=today) dueItems.push({id:c.id,dir:'r'});
     if(!seen(c.f)) newItems.push({id:c.id,dir:'f',isNew:true});
@@ -1301,6 +1329,45 @@ function buildQueue(){
   newItems.sort((a,b)=>findCard(a.id).createdAt<findCard(b.id).createdAt?-1:1);
   const introLeft=Math.max(0,settings.newPerDay-(dayStat().intro||0));
   return dueItems.concat(newItems.slice(0,introLeft));
+}
+/* ---- 候補トレイの確認シート ---- */
+function openCandSheet(){
+  const pend=pendingCards();
+  if(!pend.length){ toast('候補はありません'); return; }
+  openSheet(`
+    <h2>単語の候補（${pend.length}語）</h2>
+    <div class="small muted">チェックした語を単語帳へ。チェックを外した語は削除されます。</div>
+    <div class="row" style="margin:8px 0">
+      <button class="btn sub small" id="csAll">全選択</button>
+      <button class="btn sub small" id="csNone">全解除</button>
+    </div>
+    <div id="csList" style="max-height:45vh; overflow-y:auto">
+      ${pend.map((c,i)=>`
+        <label style="display:flex; gap:8px; align-items:flex-start; padding:7px 4px; border-bottom:1px solid var(--border); cursor:pointer">
+          <input type="checkbox" checked data-i="${i}" style="width:auto; margin-top:4px">
+          <span><b>${esc(c.word)}</b> <span class="small muted">（${esc(c.source||'')}）</span><br>
+          <span class="small muted">${esc(glossShort(c.gloss,60))}</span></span>
+        </label>`).join('')}
+    </div>
+    <div class="row" style="margin-top:12px">
+      <button class="btn grow" id="csGo">チェックした語を単語帳へ</button>
+      <button class="btn sub" id="csLater">あとで</button>
+    </div>`);
+  $('#csAll').addEventListener('click',()=>$$('#csList input').forEach(c=>c.checked=true));
+  $('#csNone').addEventListener('click',()=>$$('#csList input').forEach(c=>c.checked=false));
+  $('#csLater').addEventListener('click',closeSheet);
+  $('#csGo').addEventListener('click',()=>{
+    let ok=0, del=0;
+    $$('#csList input').forEach(cb=>{
+      const c=pend[+cb.dataset.i]; if(!c) return;
+      if(cb.checked){ approveCard(c); ok++; }
+      else{ tombs[c.id]=Date.now(); cards=cards.filter(x=>x.id!==c.id); del++; }
+    });
+    saveTombs(); saveCards(); closeSheet();
+    toast(ok+'語を単語帳に追加'+(del?('・'+del+'語を削除'):''));
+    markKnownWords(); refreshBadge(); renderRevHome();
+    if(currentTab==='deck') renderDeck();
+  });
 }
 let rev=null; // {queue, idx, done, ok, total}
 function renderRevHome(){
@@ -1313,6 +1380,13 @@ function renderRevHome(){
     ?('今日の実績: 復習 '+ts.reviewed+'枚（正答率 '+Math.round(100*ts.correct/ts.reviewed)+'%）・追加 '+(ts.added||0)+'語')
     :(ts.added?('今日の実績: 追加 '+ts.added+'語（復習はこれから）'):'');
   $('#lblNewPerDay').textContent=settings.newPerDay;
+  const pend=pendingCards();
+  $('#candBanner').innerHTML=pend.length?`
+    <div class="card" style="border-color:var(--warn); cursor:pointer" id="candOpen">
+      <b>🟡 単語の候補が ${pend.length}語 届いています</b>
+      <div class="small muted" style="margin-top:2px">${esc(pend.slice(0,6).map(c=>c.word).join(', '))}${pend.length>6?' …':''}<br>タップして確認 → ワンタップで単語帳へ</div>
+    </div>`:'';
+  const co=$('#candOpen'); if(co) co.addEventListener('click',openCandSheet);
   $('#btnStartReview').disabled=(due+newAvail)===0;
   $('#btnStartReview').textContent=(due+newAvail)===0?'✔ 今日の復習は完了です':'▶ 復習をはじめる（'+(due+newAvail)+'枚）';
   const canQuiz=cards.length>=4;
@@ -1453,8 +1527,9 @@ document.addEventListener('keydown',e=>{
 
 /* ---------------- 4択クイックテスト ---------------- */
 function startQuiz(mode){
-  if(cards.length<4){ toast('カードが4枚以上必要です'); return; }
-  const pool=shuffle(cards.slice()).slice(0,10);
+  const avail=cards.filter(c=>!c.pending);
+  if(avail.length<4){ toast('カードが4枚以上必要です'); return; }
+  const pool=shuffle(avail.slice()).slice(0,10);
   rev={mode:'quiz', quiz:pool.map(c=>{
     const dir=(mode==='mix')?(Math.random()<0.5?'f':'r'):mode;
     const others=shuffle(cards.filter(x=>x.id!==c.id)).slice(0,3);
@@ -1471,7 +1546,7 @@ $('#btnQuizType').addEventListener('click',startTypeQuiz);
 /* ---- 和→英タイピング ---- */
 function startTypeQuiz(){
   if(cards.length<1){ toast('カードがありません'); return; }
-  const pool=shuffle(cards.filter(c=>c.gloss).slice()).slice(0,10);
+  const pool=shuffle(cards.filter(c=>c.gloss&&!c.pending).slice()).slice(0,10);
   if(!pool.length){ toast('訳の入ったカードがありません'); return; }
   rev={mode:'type', quiz:pool, idx:0, ok:0, total:pool.length, hint:0};
   $('#revHome').style.display='none'; $('#revSession').style.display='block';
@@ -1732,18 +1807,46 @@ function mergeStats(a,b){
   return out;
 }
 // クラウド受信箱: iPhoneの共有シート(ショートカット)などが {w:"単語"} をPOSTしてくる場所
+// 英文テキストから難単語を抽出して「候補」カードにする（サーバ側 extract_candidates と同等）
+function extractCandidates(text,source){
+  ensureDict();
+  const minRank=settings.markLevel||10000;
+  const sentences=String(text).slice(0,20000).replace(/\n/g,' ').split(/(?<=[.!?])\s+/);
+  const found=new Map();
+  for(const sent of sentences){
+    for(const m of sent.matchAll(/[A-Za-z][A-Za-z'’-]+/g)){
+      const w=m[0].toLowerCase().replace(/’/g,"'");
+      if(w.length<3||FUNC_WORDS.has(w)) continue;
+      const lk=lookupWord(w);
+      if(!lk||found.has(lk.key)||FUNC_WORDS.has(lk.key)||lk.key.length<3) continue;
+      if(rankOf(lk.key)<minRank) continue;
+      if(findCardByKey(lk.key)) continue;
+      const ctx=sent.trim();
+      found.set(lk.key,{key:lk.key, gloss:lk.gloss, ctx:(ctx.length>=20&&ctx.length<=240)?ctx:''});
+    }
+  }
+  const top=[...found.values()].sort((a,b)=>rankOf(b.key)-rankOf(a.key)).slice(0,8);
+  for(const c of top){
+    addCard({word:c.key, key:c.key, gloss:c.gloss.replace(/\s*\/\s*/g,' ／ '),
+             examples:c.ctx?[{en:c.ctx,ja:''}]:[], source:source||'テキスト取り込み', pending:true},true);
+  }
+  return top.length;
+}
 async function pullCloudInbox(){
   const ep=syncEndpoint(); if(!ep) return 0;
   const inboxUrl=ep.replace(/\.json$/,'-inbox.json');
-  let n=0;
+  let n=0, nc=0;
   try{
     const r=await fetch(inboxUrl,{cache:'no-store'}); if(!r.ok) return 0;
     const j=await r.json(); if(!j||typeof j!=='object') return 0;
     ensureDict();
     for(const k of Object.keys(j)){
       const it=j[k]||{};
+      const text=String(it.text||'').trim();
       const w=String(it.w||'').replace(/\s+/g,' ').trim().slice(0,80);
-      if(w&&/[A-Za-z]/.test(w)){
+      if(text.length>=80){                      // ページ/段落の丸ごと共有 → 候補として抽出
+        nc+=extractCandidates(text, it.src||'iPhone共有');
+      }else if(w&&/[A-Za-z]/.test(w)){          // 単語の共有 → 即・単語帳へ
         const isPhrase=/\s/.test(w);
         const lk=isPhrase?lookupPhrase(w):lookupWord(w);
         if(!findCardByKey(lk?lk.key:w)){
@@ -1756,10 +1859,13 @@ async function pullCloudInbox(){
       }
       await fetch(inboxUrl.replace(/\.json$/,'/'+encodeURIComponent(k)+'.json'),{method:'DELETE'}).catch(()=>{});
     }
-    if(n){ toast(n+'語を共有から取り込みました'); markKnownWords(); refreshBadge();
-      if(currentTab==='deck') renderDeck(); if(currentTab==='review') renderRevHome(); }
+    if(n||nc){
+      toast((n?n+'語を追加':'')+(n&&nc?'・':'')+(nc?nc+'語を候補に':'')+'（共有から）');
+      markKnownWords(); refreshBadge();
+      if(currentTab==='deck') renderDeck(); if(currentTab==='review') renderRevHome();
+    }
   }catch(e){}
-  return n;
+  return n+nc;
 }
 async function cloudSync(silent){
   const url=syncEndpoint();
@@ -1802,6 +1908,7 @@ async function pullInbox(){
       if(items.length){
         ensureDict();
         let n=0, maxTs=0;
+        let nc=0;
         for(const it of items){
           maxTs=Math.max(maxTs,it.ts||0);
           const w=(it.word||'').trim(); if(!w) continue;
@@ -1810,17 +1917,19 @@ async function pullInbox(){
           if(findCardByKey(lk?lk.key:w)) continue;
           let gloss=lk?lk.gloss:(it.gloss||'');
           if(!gloss&&!isPhrase){ const rel=relatedLookup(w); if(rel) gloss='(関連語 '+rel.key+') '+rel.gloss; }
+          const isCand=!!it.cand;
           addCard({
             word:lk?lk.key:w, key:lk?lk.key:w.toLowerCase(),
             gloss:gloss.replace(/\s*\/\s*/g,' ／ '),
             examples:it.context?[{en:it.context,ja:''}]:[],
-            source:it.source||'Macから追加'
-          });
-          n++;
+            source:it.source||'Macから追加',
+            pending:isCand
+          },isCand);
+          if(isCand) nc++; else n++;
         }
         if(maxTs) await fetch('/api/clear?upto='+maxTs).catch(()=>{});
-        if(n){
-          toast(n+'語をMacの選択から取り込みました');
+        if(n||nc){
+          toast((n?n+'語を追加':'')+(n&&nc?'・':'')+(nc?nc+'語を候補に':'')+'（Macから）');
           markKnownWords(); refreshBadge();
           if(currentTab==='deck') renderDeck();
           if(currentTab==='review') renderRevHome();
