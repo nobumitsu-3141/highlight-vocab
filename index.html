@@ -99,6 +99,7 @@ hr{border:none; border-top:1px solid var(--border); margin:12px 0;}
 #readerText .w{cursor:pointer; border-radius:4px; padding:0 1px;}
 @media (hover:hover){ #readerText .w:hover{background:var(--chip); box-shadow:0 0 0 1px var(--border);} }
 #readerText .w.known{background:var(--hl); box-shadow:0 0 0 1px var(--hl-border);}
+#readerText .w.cand{border-bottom:2px dotted var(--warn);}
 #pageNav{display:flex; align-items:center; justify-content:center; gap:10px; margin:10px 0;}
 #pageNav button{background:var(--chip); border:1px solid var(--border); color:var(--ink); border-radius:8px; padding:6px 14px; font-size:14px; cursor:pointer;}
 #pageNav button:disabled{opacity:.35;}
@@ -220,6 +221,7 @@ code.bm{display:block; background:var(--bg); border:1px solid var(--border); bor
   <div id="readerDoc" style="display:none">
     <div id="readerBar">
       <span id="docTitle"></span>
+      <button class="btn small" id="btnBulkAdd">⚡ 難単語を一括追加</button>
       <button class="btn sub small" id="btnNewDoc">📂 別の文章</button>
     </div>
     <div id="readerText"></div>
@@ -310,6 +312,13 @@ code.bm{display:block; background:var(--bg); border:1px solid var(--border); bor
     <select id="setAutoFetch"><option value="1">オン</option><option value="0">オフ</option></select>
     <label class="fl">起動時、復習期限があれば復習タブを開く</label>
     <select id="setOpenReview"><option value="1">オン</option><option value="0">オフ</option></select>
+    <label class="fl">リーダーの「難単語の自動マーク」（点線＝一括追加の対象）</label>
+    <select id="setMarkLevel">
+      <option value="0">オフ</option>
+      <option value="6000">多め（よく出る6,000語以外をマーク）</option>
+      <option value="10000">ふつう（10,000語以外）</option>
+      <option value="16000">控えめ（16,000語以外）</option>
+    </select>
   </div>
 
   <h2>クラウド同期（Mac 2台・iPhoneでカードを共有）</h2>
@@ -324,6 +333,22 @@ code.bm{display:block; background:var(--bg); border:1px solid var(--border); bor
       <button class="btn sub" id="btnSyncNow">今すぐ同期</button>
     </div>
     <div class="small muted" id="syncStatus" style="margin-top:8px"></div>
+  </div>
+
+  <h2>iPhoneの共有シートから追加（アプリを開かずに）</h2>
+  <div class="card small" id="shortcutCard">
+    iPhoneのどのアプリでも「単語を選択 → 共有 → <b>単語帳に追加</b>」で済むようになります。
+    <b>「ショートカット」アプリで1回だけ</b>次を作成:
+    <ol style="margin:8px 0; padding-left:20px; line-height:1.8">
+      <li>ショートカットアプリ → ＋ → 名前「<b>単語帳に追加</b>」</li>
+      <li>ⓘ（設定）→「<b>共有シートに表示</b>」をオン（受け取る種類: テキスト）</li>
+      <li>アクション追加:「<b>URLの内容を取得</b>」→ URLに下のアドレスを貼り付け</li>
+      <li>「方法」を <b>POST</b> に →「本文を要求」JSON → フィールド追加: キー <b>w</b> ・値 <b>ショートカットの入力</b></li>
+    </ol>
+    <label class="fl">ショートカットに貼るURL（同期設定後に表示されます）</label>
+    <code class="bm" id="inboxUrl">（設定タブでクラウド同期を有効にしてください）</code>
+    <div class="row" style="margin-top:8px"><button class="btn small" id="btnCopyInbox">URLをコピー</button></div>
+    <div class="muted" style="margin-top:6px">追加された単語は、次にどの端末でアプリを開いたときにも自動でカードになります。</div>
   </div>
 
   <h2>Macのどこからでも追加（アプリを開かずに）</h2>
@@ -414,7 +439,7 @@ code.bm{display:block; background:var(--bg); border:1px solid var(--border); bor
 /* =====================================================================
    ハイライト英単語帳  v1.0.0
    ===================================================================== */
-const VERSION='1.3.2';
+const VERSION='1.4.0';
 const $=s=>document.querySelector(s), $$=s=>Array.from(document.querySelectorAll(s));
 const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,7);
@@ -432,7 +457,7 @@ function lsSet(k,v){ try{ localStorage.setItem(k,JSON.stringify(v)); return true
 
 let cards=lsGet(LS.cards,[]);
 let settings=Object.assign({newPerDay:10, theme:'auto', autoSpeak:false, autoFetch:true,
-                            openReview:true, syncUrl:'', syncCode:'', lastSync:0}, lsGet(LS.settings,{}));
+                            openReview:true, syncUrl:'', syncCode:'', lastSync:0, markLevel:10000}, lsGet(LS.settings,{}));
 let stats=lsGet(LS.stats,{byDay:{}});
 let tombs=lsGet(LS.tombs,{});   // 削除の墓標 {cardId: 削除時刻ms} — 同期で復活しないように
 function saveCards(){ lsSet(LS.cards,cards); refreshBadge(); scheduleSync(); }
@@ -547,6 +572,12 @@ function isBasicWord(k){
   if(!BASIC){ BASIC=new Set(window.BASIC_WORDS||[]); if(!BASIC.size) return false; }
   return BASIC.has(k);
 }
+// 頻度順位（小さいほどよく使う語。リスト外=十分稀 とみなす）
+let RANK=null;
+function rankOf(k){
+  if(!RANK){ RANK=new Map(); (window.EN_FREQ||[]).forEach((w,i)=>RANK.set(w,i)); }
+  return RANK.has(k)?RANK.get(k):1e9;
+}
 // ホバーで意味を出さない機能語（クリックでの追加は可能）
 const FUNC_WORDS=new Set(['the','a','an','and','or','but','of','to','in','on','at','for','with','by','from','as','is','are','was','were','be','been','being','it','its','he','she','they','them','his','her','their','this','that','these','those','which','who','whom','whose','what','has','have','had','not','no','so','if','can','could','will','would','may','might','shall','should','do','does','did','i','my','me','you','your','we','our','us','am','than','then','there','here']);
 function glossShort(g,n){ n=n||46; g=(g||'').replace(/\s*\/\s*/g,'、'); return g.length>n?g.slice(0,n)+'…':g; }
@@ -577,7 +608,7 @@ function knownKeySet(){
   for(const c of cards){ s.add(c.word.toLowerCase()); if(c.key) s.add(c.key); }
   return s;
 }
-function addCard(o){
+function addCard(o,quiet){
   const card={
     id:uid(), word:o.word.trim(), key:(o.key||o.word).toLowerCase().trim(),
     gloss:o.gloss||'', usage:o.usage||'', phonetic:o.phonetic||'',
@@ -588,7 +619,7 @@ function addCard(o){
   card.f.due=todayStr();          // 英→和は今日から新規として出題可能
   cards.unshift(card);
   dayStat().added++; saveStats(); saveCards();
-  if(settings.autoFetch) enrichCard(card);
+  if(settings.autoFetch&&!quiet) enrichCard(card);   // 一括追加時はAPI連打を避ける
   return card;
 }
 function seen(s){ return s.reps>0||s.lapses>0; }
@@ -735,16 +766,67 @@ function renderReader(){
 }
 function markKnownWords(){
   const known=knownKeySet();
+  const doCand=settings.markLevel>0&&Array.isArray(window.EN_FREQ)&&window.EN_FREQ.length>0;
   readerText.querySelectorAll('.w').forEach(sp=>{
     const t=sp.textContent.toLowerCase();
-    let hit=known.has(t);
-    if(!hit){ const lk=lookupWord(t); if(lk&&known.has(lk.key)) hit=true; }
+    const lk=lookupWord(t);
+    const key=lk?lk.key:t;
+    const hit=known.has(t)||known.has(key);
     sp.classList.toggle('known',hit);
+    // 難単語候補: 辞書にある語で、頻度がしきい値より稀 → 点線マーク
+    const cand=!hit&&doCand&&lk&&!FUNC_WORDS.has(t)&&key.length>=3&&rankOf(key)>=settings.markLevel;
+    sp.classList.toggle('cand',cand);
   });
 }
 $('#pgPrev').addEventListener('click',()=>{ if(doc&&doc.page>0){ doc.page--; lsSet(LS.doc,doc); renderReader(); window.scrollTo(0,0);} });
 $('#pgNext').addEventListener('click',()=>{ if(doc&&doc.page<doc.pages.length-1){ doc.page++; lsSet(LS.doc,doc); renderReader(); window.scrollTo(0,0);} });
 $('#btnNewDoc').addEventListener('click',()=>{ openSourceSheet(); });
+
+/* ---- 難単語の一括追加（現在のページの点線マーク語をまとめて） ---- */
+$('#btnBulkAdd').addEventListener('click',()=>{
+  const seen=new Set(); const items=[];
+  readerText.querySelectorAll('.w.cand').forEach(sp=>{
+    const lk=lookupWord(sp.textContent); if(!lk) return;
+    if(seen.has(lk.key)||findCardByKey(lk.key)) return;
+    seen.add(lk.key); items.push(lk);
+  });
+  if(!items.length){
+    toast(settings.markLevel>0?'このページに未追加の難単語マークがありません':'設定で「難単語の自動マーク」をオンにしてください');
+    return;
+  }
+  openSheet(`
+    <h2>難単語を一括追加（このページ・${items.length}語）</h2>
+    <div class="small muted">知っている単語のチェックを外して「追加」を押してください。</div>
+    <div class="row" style="margin:8px 0">
+      <button class="btn sub small" id="baAll">全選択</button>
+      <button class="btn sub small" id="baNone">全解除</button>
+    </div>
+    <div id="baList" style="max-height:45vh; overflow-y:auto">
+      ${items.map((it,i)=>`
+        <label style="display:flex; gap:8px; align-items:flex-start; padding:7px 4px; border-bottom:1px solid var(--border); cursor:pointer">
+          <input type="checkbox" checked data-i="${i}" style="width:auto; margin-top:4px">
+          <span><b>${esc(it.key)}</b><br><span class="small muted">${esc(glossShort(it.gloss,60))}</span></span>
+        </label>`).join('')}
+    </div>
+    <div class="row" style="margin-top:12px">
+      <button class="btn grow" id="baGo">チェックした単語を追加</button>
+      <button class="btn sub" id="baCancel">閉じる</button>
+    </div>`);
+  $('#baAll').addEventListener('click',()=>$$('#baList input').forEach(c=>c.checked=true));
+  $('#baNone').addEventListener('click',()=>$$('#baList input').forEach(c=>c.checked=false));
+  $('#baCancel').addEventListener('click',closeSheet);
+  $('#baGo').addEventListener('click',()=>{
+    let n=0;
+    $$('#baList input:checked').forEach(cb=>{
+      const it=items[+cb.dataset.i];
+      if(!findCardByKey(it.key)){
+        addCard({word:it.key,key:it.key,gloss:it.gloss.replace(/\s*\/\s*/g,' ／ '),source:doc?doc.title:''},true);
+        n++;
+      }
+    });
+    closeSheet(); toast(n+'語を追加しました'); markKnownWords(); refreshBadge();
+  });
+});
 
 /* ---- 入力ソース ---- */
 function openSourceSheet(){
@@ -1084,6 +1166,31 @@ $('#deckChips').addEventListener('click',e=>{
 });
 $('#deckSearch').addEventListener('input',()=>renderDeck());
 $('#deckSort').addEventListener('change',()=>renderDeck());
+function openBatchAddSheet(){
+  openSheet(`
+    <h2>単語リストをまとめて追加</h2>
+    <div class="small muted">1行に1語（フレーズも可）。訳は内蔵辞書から自動で入ります。</div>
+    <textarea id="batchWords" style="min-height:160px" placeholder="deteriorate
+meticulous
+between A and B" autocapitalize="off"></textarea>
+    <div class="row" style="margin-top:12px"><button class="btn grow" id="batchGo">まとめて追加</button></div>
+  `);
+  $('#batchGo').addEventListener('click',()=>{
+    const lines=[...new Set($('#batchWords').value.split(/\n/).map(l=>l.replace(/\s+/g,' ').trim()).filter(l=>l&&/[A-Za-z]/.test(l)&&l.length<=80))];
+    if(!lines.length){ toast('単語を入力してください'); return; }
+    let added=0, skipped=0;
+    for(const w of lines){
+      const isPhrase=/\s/.test(w);
+      const lk=isPhrase?lookupPhrase(w):lookupWord(w);
+      if(findCardByKey(lk?lk.key:w)){ skipped++; continue; }
+      let gloss=lk?lk.gloss:''; if(!gloss&&!isPhrase){ const rel=relatedLookup(w); if(rel) gloss='(関連語 '+rel.key+') '+rel.gloss; }
+      addCard({word:lk?lk.key:w, key:lk?lk.key:w.toLowerCase(), gloss:gloss.replace(/\s*\/\s*/g,' ／ '), source:'リスト一括追加'},true);
+      added++;
+    }
+    closeSheet(); renderDeck(); refreshBadge(); markKnownWords();
+    toast(added+'語を追加しました'+(skipped?('（'+skipped+'語は登録済み）'):''));
+  });
+}
 $('#btnAddManual').addEventListener('click',()=>{
   openSheet(`
     <h2>単語を手動で追加</h2>
@@ -1092,7 +1199,9 @@ $('#btnAddManual').addEventListener('click',()=>{
     <label class="fl">訳（空欄なら辞書から自動で入ります）</label>
     <textarea id="mGloss"></textarea>
     <div class="row" style="margin-top:12px"><button class="btn grow" id="mGo">追加</button></div>
+    <div class="small" style="margin-top:10px"><a href="#" id="mBatch" style="color:var(--accent)">単語リストをまとめて追加（1行1語）→</a></div>
   `);
+  $('#mBatch').addEventListener('click',e=>{ e.preventDefault(); closeSheet(); openBatchAddSheet(); });
   const mw=$('#mWord');
   mw.addEventListener('change',()=>{
     const w=mw.value.trim(); if(!w) return;
@@ -1502,8 +1611,11 @@ function renderSettings(){
   $('#setAutoSpeak').value=settings.autoSpeak?'1':'0';
   $('#setAutoFetch').value=settings.autoFetch?'1':'0';
   $('#setOpenReview').value=settings.openReview?'1':'0';
+  $('#setMarkLevel').value=String(settings.markLevel||0);
   $('#setSyncUrl').value=settings.syncUrl||'';
   $('#setSyncCode').value=settings.syncCode||'';
+  const ep=syncEndpoint();
+  $('#inboxUrl').textContent=ep?ep.replace(/\.json$/,'-inbox.json'):'（設定タブでクラウド同期を有効にしてください）';
   renderSyncStatus();
   $('#verLabel').textContent='v'+VERSION;
   const base=location.origin+location.pathname.replace(/index\.html$/,'');
@@ -1518,6 +1630,13 @@ $('#setTheme').addEventListener('change',e=>{ settings.theme=e.target.value; sav
 $('#setAutoSpeak').addEventListener('change',e=>{ settings.autoSpeak=e.target.value==='1'; saveSettings(); });
 $('#setAutoFetch').addEventListener('change',e=>{ settings.autoFetch=e.target.value==='1'; saveSettings(); });
 $('#setOpenReview').addEventListener('change',e=>{ settings.openReview=e.target.value==='1'; saveSettings(); });
+$('#setMarkLevel').addEventListener('change',e=>{ settings.markLevel=+e.target.value||0; saveSettings(); markKnownWords(); });
+$('#btnCopyInbox').addEventListener('click',async()=>{
+  const t=$('#inboxUrl').textContent;
+  if(!t.startsWith('http')){ toast('先にクラウド同期を設定してください'); return; }
+  try{ await navigator.clipboard.writeText(t); toast('コピーしました'); }
+  catch(e){ toast('コピーできませんでした。長押しで選択してください'); }
+});
 $('#btnSaveSync').addEventListener('click',()=>{
   // 設定リンク(…?syncUrl=…&syncCode=…)を丸ごと貼り付けてもOKにする（iPhone向け）
   let u=$('#setSyncUrl').value.trim();
@@ -1612,6 +1731,36 @@ function mergeStats(a,b){
   }
   return out;
 }
+// クラウド受信箱: iPhoneの共有シート(ショートカット)などが {w:"単語"} をPOSTしてくる場所
+async function pullCloudInbox(){
+  const ep=syncEndpoint(); if(!ep) return 0;
+  const inboxUrl=ep.replace(/\.json$/,'-inbox.json');
+  let n=0;
+  try{
+    const r=await fetch(inboxUrl,{cache:'no-store'}); if(!r.ok) return 0;
+    const j=await r.json(); if(!j||typeof j!=='object') return 0;
+    ensureDict();
+    for(const k of Object.keys(j)){
+      const it=j[k]||{};
+      const w=String(it.w||'').replace(/\s+/g,' ').trim().slice(0,80);
+      if(w&&/[A-Za-z]/.test(w)){
+        const isPhrase=/\s/.test(w);
+        const lk=isPhrase?lookupPhrase(w):lookupWord(w);
+        if(!findCardByKey(lk?lk.key:w)){
+          let gloss=lk?lk.gloss:'';
+          if(!gloss&&!isPhrase){ const rel=relatedLookup(w); if(rel) gloss='(関連語 '+rel.key+') '+rel.gloss; }
+          addCard({word:lk?lk.key:w, key:lk?lk.key:w.toLowerCase(),
+                   gloss:gloss.replace(/\s*\/\s*/g,' ／ '), source:it.src||'共有から追加'},true);
+          n++;
+        }
+      }
+      await fetch(inboxUrl.replace(/\.json$/,'/'+encodeURIComponent(k)+'.json'),{method:'DELETE'}).catch(()=>{});
+    }
+    if(n){ toast(n+'語を共有から取り込みました'); markKnownWords(); refreshBadge();
+      if(currentTab==='deck') renderDeck(); if(currentTab==='review') renderRevHome(); }
+  }catch(e){}
+  return n;
+}
 async function cloudSync(silent){
   const url=syncEndpoint();
   if(!url){ if(!silent) toast('同期が未設定です（設定タブでURLとコードを入力）'); return; }
@@ -1628,6 +1777,7 @@ async function cloudSync(silent){
       lsSet(LS.cards,cards); lsSet(LS.stats,stats);
       if(cards.length!==before){ markKnownWords(); if(currentTab==='deck') renderDeck(); if(currentTab==='review') renderRevHome(); }
     }
+    await pullCloudInbox();   // 共有シートからの単語をカード化してから押し上げる
     const put=await fetch(url,{method:'PUT',body:JSON.stringify({cards:cards,stats:stats,tombs:tombs,updatedAt:Date.now()})});
     if(!put.ok) throw new Error('HTTP '+put.status);
     settings.lastSync=Date.now(); saveSettings(); refreshBadge();

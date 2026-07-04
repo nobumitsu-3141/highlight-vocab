@@ -195,6 +195,11 @@ class Handler(SimpleHTTPRequestHandler):
     def log_message(self, fmt, *args):  # 静かに
         pass
 
+    def end_headers(self):
+        # ブラウザのHTTPキャッシュに古いdict.js等を掴ませない(オフラインはSWが担当)
+        self.send_header('Cache-Control', 'no-cache')
+        super().end_headers()
+
     def _send(self, code, body, ctype='application/json; charset=utf-8'):
         data = body.encode('utf-8')
         self.send_response(code)
